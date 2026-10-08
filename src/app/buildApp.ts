@@ -8,6 +8,7 @@ import { organizationRoutes } from '../modules/organizations/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
 import { fleetRoutes } from '../modules/fleets/routes.js';
 import { assetRoutes } from '../modules/assets/routes.js';
+import { costRoutes } from '../modules/costs/routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -29,6 +30,7 @@ export async function buildApp(config: Config = loadConfig()): Promise<FastifyIn
   await app.register(userRoutes, { prefix: '/api/v1' });
   await app.register(fleetRoutes, { prefix: '/api/v1' });
   await app.register(assetRoutes, { prefix: '/api/v1' });
+  await app.register(costRoutes, { prefix: '/api/v1' });
 
   return app;
 }

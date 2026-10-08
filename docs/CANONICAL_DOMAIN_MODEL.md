@@ -12,7 +12,8 @@ Organization
            ├── CostRecord
            └── TcoRun
 
-OperatingProfile  (org-scoped lookup, referenced by Locomotive)
+OperatingProfile  (org-scoped lookup, referenced by Locomotive and optionally by Scenario)
+Scenario          (org-scoped, fleet-agnostic assumption bundle; TcoRun.scenarioId optionally references it)
 ```
 
 ## Organization
@@ -81,9 +82,62 @@ This is the one place a JSON column is justified — the breakdown shape is
 genuinely variable (per-part/per-category rows) and is never queried by its
 internal fields, only displayed back whole.
 
+## Scenario (Phase 7)
+
+**Important finding from re-inspecting the frontend**: the SAHAY frontend's
+Scenario feature (`src/data/syntheticData.ts`'s `Scenario` interface,
+`simulationStore.ts`, `/scenarios` page) has no "apply a scenario" behavior
+at all. `setActiveScenario()` is a pure label-setter never wired to
+`setParams()`; the Scenario Comparator page renders static, hand-authored
+`tco` numbers through a synthetic display curve, never calling the real
+simulation engine. There is no create/edit/duplicate/delete UI, no
+persistence, and no `locomotiveId` binding on a scenario — it's a flat,
+fleet-agnostic parameter bundle that today exists only as 8 static display
+cards. **This section is therefore new design, not a port** — per the
+instruction to use the frontend as the source of truth for what exists, not
+to invent behavior it doesn't have, this is called out explicitly rather
+than presented as ported logic.
+
+Fields carried over from the frontend's `Scenario` shape (same names, so a
+future UI can map 1:1): `name`, `planningHorizonYears`,
+`maintenanceIntervalMultiplier`, `failureRateMultiplier`,
+`warrantyExtendedYears`, `operatingProfileId` (nullable FK — overrides the
+locomotive's own profile for this run only). `discountRate`,
+`fuelCostPerLiter`, `laborRate`, `inflationEnabled`, `includeDowntime` are
+also stored (full frontend parity on the data shape) but **not yet applied**
+by the TCO engine for the same reason the frontend never consumed some of
+them either (`discountRate`/`fuelCostPerLiter` are dead fields there too) —
+the others (`laborRate`, `inflationEnabled`, `includeDowntime`) would need
+engine features (hourly labor rates, inflation modeling, downtime costing)
+that don't exist yet. This is documented, not silently dropped — see
+`TCO_ENGINE_SPECIFICATION.md`'s Scenario section.
+
+Deliberately **not** created, because the frontend has no such concept and
+nothing in the product requires it yet:
+- `ScenarioAssumption` / `ScenarioInput` as separate tables — the fields
+  above are a flat bundle in the frontend too; splitting them into child
+  rows would be normalization the data doesn't call for.
+- `ScenarioComparison` — comparing scenarios is purely "fetch N scenarios
+  and N of their TCO runs, show side by side" on the client; there's no
+  server-side comparison state to persist.
+- `duplicate` as a distinct operation — a client can `POST` a copy of an
+  existing scenario's fields; a dedicated endpoint would be a thin wrapper
+  with no behavior of its own.
+
+## TcoRun.scenarioId (extends Phase 6)
+
+`TcoRun` gains a nullable `scenarioId` FK. Running `POST /tco/runs` with a
+`scenarioId` applies that scenario's multipliers to each component before
+computing (see `TCO_ENGINE_SPECIFICATION.md`), and overrides the horizon with
+`scenario.planningHorizonYears` unless the caller passes an explicit
+`horizonYears`. This satisfies the "don't duplicate TCO formulas in the
+scenario module" requirement — the engine in `src/modules/tco/engine.ts`
+remains the only place the math lives; the scenario module only transforms
+inputs before calling it.
+
 ## Explicitly not modeled yet
 
-`Part`/BOM, `Scenario`, `Vendor`, simulation runs, reliability/health scoring,
-integrations, audit log — each belongs to a later phase (see
+`Part`/BOM, `Vendor`, Monte Carlo simulation runs, reliability/health
+scoring, integrations, audit log — each belongs to a later phase (see
 `FRONTEND_DOMAIN_INVENTORY.md` for where). Building their tables now would be
 schema for capabilities with no endpoint and no caller.

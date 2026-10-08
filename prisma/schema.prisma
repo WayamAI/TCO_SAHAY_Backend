@@ -33,6 +33,7 @@ model User {
 
   memberships   Membership[]
   refreshTokens RefreshToken[]
+  tcoRuns       TcoRun[]
 }
 
 model Membership {
@@ -121,6 +122,7 @@ model Locomotive {
   systems              SystemNode[]
   maintenanceSchedules MaintenanceSchedule[]
   costRecords          CostRecord[]
+  tcoRuns              TcoRun[]
 
   @@index([organizationId, fleetId])
 }
@@ -244,4 +246,20 @@ model CostRecord {
   locomotive Locomotive @relation(fields: [locomotiveId], references: [id])
 
   @@index([organizationId, locomotiveId, year, category])
+}
+
+model TcoRun {
+  id              String   @id @default(uuid())
+  organizationId  String
+  locomotiveId    String
+  horizonYears    Int
+  inputs          Json
+  outputs         Json
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  locomotive Locomotive @relation(fields: [locomotiveId], references: [id])
+  createdBy  User       @relation(fields: [createdByUserId], references: [id])
+
+  @@index([organizationId, locomotiveId])
 }

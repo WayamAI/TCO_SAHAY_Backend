@@ -45,6 +45,8 @@ describe('OpenAPI integration', () => {
       '/locomotives/:id/cost-records',
       '/tco/runs',
       '/locomotives/:id/tco-runs',
+      '/scenarios',
+      '/scenarios/:id',
     ]) {
       // Fastify's openapi plugin rewrites :param to {param} in the spec.
       const asOpenApiPath = expected.replace(/:([a-zA-Z]+)/g, '{$1}');

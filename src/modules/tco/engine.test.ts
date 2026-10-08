@@ -59,4 +59,21 @@ describe('tco engine', () => {
     expect(a).toEqual(b);
     expect(a.customerTCO + a.warrantyCoveredCost).toBe(a.totalCost);
   });
+
+  // Regression guard for the documented gap in TCO_ENGINE_SPECIFICATION.md:
+  // the frontend's Part-level engine treats warranty as whichever-first of
+  // warrantyYears AND warrantyKm. Component has no warrantyKm field, so this
+  // engine can only check years - meaning a high-mileage early failure that
+  // would be past warranty by km (but not by year count) is still flagged
+  // underWarranty: true here. This test pins that known behavior so a future
+  // change to it (e.g. adding Part-level TCO) shows up as a deliberate diff.
+  it('documents the known warranty-km gap: year-only warranty check', () => {
+    const highMileageComponent = { ...component, warrantyYears: 10 };
+    // 300,000 annual hours over 5 years is an implausibly high-mileage duty
+    // cycle that would blow past any realistic warranty-km limit well before
+    // year 5 - but this engine has no km field to check, so it stays "under
+    // warranty" on years alone.
+    const events = maintenanceEvents(highMileageComponent, 5);
+    expect(events[0].underWarranty).toBe(true);
+  });
 });

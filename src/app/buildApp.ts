@@ -6,6 +6,8 @@ import { healthRoutes } from '../modules/health/routes.js';
 import { authRoutes } from '../modules/auth/routes.js';
 import { organizationRoutes } from '../modules/organizations/routes.js';
 import { userRoutes } from '../modules/users/routes.js';
+import { fleetRoutes } from '../modules/fleets/routes.js';
+import { assetRoutes } from '../modules/assets/routes.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -25,6 +27,8 @@ export async function buildApp(config: Config = loadConfig()): Promise<FastifyIn
   await app.register(authRoutes, { prefix: '/api/v1' });
   await app.register(organizationRoutes, { prefix: '/api/v1' });
   await app.register(userRoutes, { prefix: '/api/v1' });
+  await app.register(fleetRoutes, { prefix: '/api/v1' });
+  await app.register(assetRoutes, { prefix: '/api/v1' });
 
   return app;
 }

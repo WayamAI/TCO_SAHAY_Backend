@@ -83,9 +83,32 @@ caller's org or be a seeded global profile.
 
 | Method | Path | Auth | Body | Notes |
 |---|---|---|---|---|
-| POST | `/tco/runs` | bearer | `{locomotiveId, horizonYears, laborPct}` | computes + persists a `TcoRun`, returns full breakdown |
+| POST | `/tco/runs` | bearer | `{locomotiveId, horizonYears, scenarioId?}` | computes + persists a `TcoRun`, returns full breakdown. `laborPct` is not in the body — it's each `Component.laborCostPct`, already stored at Phase 4 |
 | GET | `/tco/runs/:id` | bearer | | re-fetch a prior run |
 | GET | `/locomotives/:id/tco-runs` | bearer | | history of runs for one locomotive |
+
+## Scenarios (Phase 7)
+
+Fleet-agnostic, org-scoped assumption bundles. See
+`CANONICAL_DOMAIN_MODEL.md` for why this is new design rather than a port —
+the frontend never implements "apply a scenario."
+
+| Method | Path | Auth | Role | Notes |
+|---|---|---|---|---|
+| GET | `/scenarios` | bearer | any | paginated |
+| POST | `/scenarios` | bearer | ADMIN/MANAGER | |
+| GET | `/scenarios/:id` | bearer | any | |
+| PATCH | `/scenarios/:id` | bearer | ADMIN/MANAGER | |
+| DELETE | `/scenarios/:id` | bearer | ADMIN | hard delete — `TcoRun.scenarioId` is set null on runs that used it |
+
+`POST /tco/runs` accepts an optional `scenarioId`. When present: the
+scenario's `maintenanceIntervalMultiplier`/`failureRateMultiplier`/
+`warrantyExtendedYears` are applied to every component before the engine
+runs, its `operatingProfileId` (if set) overrides the locomotive's own
+profile for that run's annual-hours figure, and its
+`planningHorizonYears` is used as the horizon unless the caller passes an
+explicit `horizonYears`. See `TCO_ENGINE_SPECIFICATION.md` for the exact
+per-field mapping and which Scenario fields are stored but not yet applied.
 
 ## Error codes used across all of the above
 

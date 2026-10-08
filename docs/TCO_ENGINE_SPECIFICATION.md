@@ -56,6 +56,34 @@ Part rows directly (or a `partTco`/`fleetTco` pair alongside the existing
 `componentTco`/`locomotiveTco`, reusing the same labor/warranty-split
 pattern) — not a rewrite of what exists now.
 
+## Scenario application (Phase 7, new design — not a port)
+
+Re-inspecting the frontend confirmed it never actually applies a scenario to
+any calculation (`setActiveScenario()` is a label-only setter; see
+`CANONICAL_DOMAIN_MODEL.md`'s Scenario section for the full finding). The
+mapping below is therefore new backend behavior, designed to reuse the
+frontend's field *names* (so a future UI could map 1:1) without pretending
+any of this logic was ported from somewhere that runs it today.
+
+| Scenario field | Applied? | How |
+|---|---|---|
+| `maintenanceIntervalMultiplier` | Yes | `effectiveLifeYears = component.lifeYears / multiplier` — a multiplier > 1 (more frequent maintenance, matching `OperatingProfile.maintenanceFreqMultiplier`'s existing sense in the frontend) shortens the effective interval |
+| `failureRateMultiplier` | Yes | Scales the Weibull `buffer` (warranty reserve): `buffer = replacementCost × weibullFailureProbability(...) × failureRateMultiplier` |
+| `warrantyExtendedYears` | Yes | Added to `component.warrantyYears` before the warranty-window check |
+| `operatingProfileId` | Yes | If set, that profile's `annualHours` replaces the locomotive's own `annualHours` as the age input to `weibullFailureProbability` for this run only — the locomotive row itself is never modified |
+| `planningHorizonYears` | Yes, as a default | Used as `horizonYears` unless the caller's request body supplies an explicit one |
+| `laborRate` | **No** | The engine computes labor as `laborCostPct` of replacement cost (Component-level), not an hourly rate × hours — there's no hours figure at Component granularity to multiply `laborRate` against. Applying it would require inventing a labor-hours field with no frontend or domain source. Stored for future use (Part-level TCO, Phase 10, does have `laborHoursPerReplacement` and could use it) |
+| `inflationEnabled` | **No** | The engine has no inflation model at all yet (no compounding-by-year logic exists anywhere in `engine.ts`) |
+| `includeDowntime` | **No** | The engine has no downtime cost line item (that's `simulationEngine.ts`'s territory on the frontend, itself out of scope until Phase 8/9) |
+| `discountRate` | **No** | Dead on the frontend too (never consumed by any frontend TCO math) — carried in the schema purely for data-shape parity, not calculated against |
+| `fuelCostPerLiter` | **No** | Same as above — dead on the frontend, no fuel cost line item in this engine |
+
+Fields marked "No" are stored on `Scenario` and returned unchanged in API
+responses; they do not silently vanish, they're just not yet load-bearing.
+This list is the single source of truth for which Scenario fields do
+something — update it in the same commit as any engine change that starts
+applying one of the "No" fields.
+
 ## Tests added to prove the above, not disprove it
 
 Since the two engines are *not* equivalent, no test asserts equal output.

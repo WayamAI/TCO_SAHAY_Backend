@@ -66,10 +66,24 @@ FUEL,DOWNTIME)`, `amount`, `createdAt`. No `updatedAt`/`deletedAt` — append
 only, indexed on `(locomotiveId, year, category)`.
 
 **TcoRun** — `id`, `organizationId`, `locomotiveId FK→Locomotive`,
-`horizonYears`, `laborPct`, `inputs JSONB`, `outputs JSONB`, `createdAt`,
-`createdByUserId FK→User`. `inputs`/`outputs` are JSON because they're
-write-once, read-whole, never filtered by internal field — the one place a
-JSON column is justified per the no-blob rule.
+`scenarioId FK→Scenario NULL`, `horizonYears`, `laborPct`, `inputs JSONB`,
+`outputs JSONB`, `createdAt`, `createdByUserId FK→User`. `inputs`/`outputs`
+are JSON because they're write-once, read-whole, never filtered by internal
+field — the one place a JSON column is justified per the no-blob rule.
+`scenarioId` is nullable because most runs (Phase 6) have no scenario.
+
+**Scenario** — `id`, `organizationId`, `name`, `planningHorizonYears`,
+`discountRate` (stored, not yet applied by the engine - see
+`TCO_ENGINE_SPECIFICATION.md`), `laborRate` (stored, not yet applied),
+`maintenanceIntervalMultiplier`, `failureRateMultiplier`,
+`warrantyExtendedYears`, `fuelCostPerLiter` (stored, not yet applied),
+`inflationEnabled` (stored, not yet applied), `includeDowntime` (stored, not
+yet applied), `operatingProfileId FK→OperatingProfile NULL`, `createdAt`,
+`updatedAt`. No `locomotiveId` — fleet-agnostic, matching the frontend's flat
+`Scenario` shape exactly (see `CANONICAL_DOMAIN_MODEL.md`). No soft delete —
+`TcoRun.scenarioId` uses `onDelete: SetNull`, so a scenario can be hard-
+deleted even after it's been used; the `TcoRun` keeps its own copy of the
+applied values in `inputs`, so history survives the scenario's deletion.
 
 ## Indexing summary
 

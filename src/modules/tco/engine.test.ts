@@ -60,6 +60,14 @@ describe('tco engine', () => {
     expect(a.customerTCO + a.warrantyCoveredCost).toBe(a.totalCost);
   });
 
+  it('failureRateMultiplier scales the buffer (warranty reserve) linearly', () => {
+    const base = componentTco(component, 20, { annualHours: 4500 });
+    const doubled = componentTco(component, 20, { annualHours: 4500 }, 2);
+    expect(doubled.buffer).toBeCloseTo(base.buffer * 2, 6);
+    // Scaling the buffer must not change the maintenance-event math.
+    expect(doubled.totalCost).toBe(base.totalCost);
+  });
+
   // Regression guard for the documented gap in TCO_ENGINE_SPECIFICATION.md:
   // the frontend's Part-level engine treats warranty as whichever-first of
   // warrantyYears AND warrantyKm. Component has no warrantyKm field, so this

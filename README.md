@@ -26,6 +26,16 @@ curl localhost:8000/health
 curl localhost:8000/ready
 ```
 
+## API documentation
+
+Interactive Swagger UI: `http://localhost:8000/docs`. Raw OpenAPI 3 spec:
+`http://localhost:8000/openapi.json`. Generated directly from each route's
+`schema` option (reusing the existing zod request schemas via `z2j()` in
+`src/shared/zodSchema.ts`) rather than hand-maintained — `API_CONTRACT.md`
+stays the prose version, this is the live one. Request validation is still
+the existing manual `zod.parse()` in each handler; the attached schemas are
+documentation-only (see `src/app/openapi.ts`).
+
 ## Scripts
 
 - `pnpm dev` — watch mode (tsx)

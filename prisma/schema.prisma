@@ -90,6 +90,7 @@ model OperatingProfile {
   description               String
 
   locomotives Locomotive[]
+  scenarios   Scenario[]
 
   @@index([organizationId])
 }
@@ -252,6 +253,7 @@ model TcoRun {
   id              String   @id @default(uuid())
   organizationId  String
   locomotiveId    String
+  scenarioId      String?
   horizonYears    Int
   inputs          Json
   outputs         Json
@@ -259,7 +261,32 @@ model TcoRun {
   createdAt       DateTime @default(now())
 
   locomotive Locomotive @relation(fields: [locomotiveId], references: [id])
+  scenario   Scenario?  @relation(fields: [scenarioId], references: [id], onDelete: SetNull)
   createdBy  User       @relation(fields: [createdByUserId], references: [id])
 
   @@index([organizationId, locomotiveId])
+  @@index([scenarioId])
+}
+
+model Scenario {
+  id                           String   @id @default(uuid())
+  organizationId               String
+  name                         String
+  planningHorizonYears         Int
+  discountRate                 Float
+  laborRate                    Float
+  maintenanceIntervalMultiplier Float
+  failureRateMultiplier        Float
+  warrantyExtendedYears        Float
+  fuelCostPerLiter             Float
+  inflationEnabled             Boolean
+  includeDowntime              Boolean
+  operatingProfileId           String?
+  createdAt                    DateTime @default(now())
+  updatedAt                    DateTime @updatedAt
+
+  operatingProfile OperatingProfile? @relation(fields: [operatingProfileId], references: [id])
+  tcoRuns          TcoRun[]
+
+  @@index([organizationId])
 }

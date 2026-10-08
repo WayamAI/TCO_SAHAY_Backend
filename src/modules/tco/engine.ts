@@ -94,6 +94,7 @@ export function componentTco(
   component: TcoComponentInput,
   horizonYears: number,
   input: TcoEventInput,
+  failureRateMultiplier = 1,
 ): ComponentTco {
   const events = maintenanceEvents(component, horizonYears);
 
@@ -108,7 +109,8 @@ export function componentTco(
 
   const totalCost = maintenanceCost + laborCost;
   const ageHours = horizonYears * input.annualHours;
-  const failureProbability = weibullFailureProbability(ageHours, component.weibullBeta, component.weibullEta);
+  const failureProbability =
+    weibullFailureProbability(ageHours, component.weibullBeta, component.weibullEta) * failureRateMultiplier;
   const buffer = component.replacementCost * failureProbability;
 
   return {
@@ -143,8 +145,9 @@ export function locomotiveTco(
   components: TcoComponentInput[],
   horizonYears: number,
   input: TcoEventInput,
+  failureRateMultiplier = 1,
 ): LocomotiveTco {
-  const rows = components.map((c) => componentTco(c, horizonYears, input));
+  const rows = components.map((c) => componentTco(c, horizonYears, input, failureRateMultiplier));
   const sum = (pick: (r: ComponentTco) => number) => rows.reduce((s, r) => s + pick(r), 0);
 
   const totalCost = sum((r) => r.totalCost);

@@ -1,4 +1,4 @@
-import type { FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyRequest } from 'fastify';
 import { verifyAccessToken, type AccessTokenPayload } from '../modules/auth/tokens.js';
 import { ForbiddenError, UnauthenticatedError } from './errors.js';
 
@@ -9,7 +9,7 @@ declare module 'fastify' {
 }
 
 export function buildAuthenticate(jwtAccessSecret: string) {
-  return async function authenticate(request: FastifyRequest, _reply: FastifyReply): Promise<void> {
+  return async function authenticate(request: FastifyRequest): Promise<void> {
     const header = request.headers.authorization;
     if (!header?.startsWith('Bearer ')) throw new UnauthenticatedError();
     const token = header.slice('Bearer '.length);

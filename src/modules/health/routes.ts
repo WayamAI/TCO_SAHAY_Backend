@@ -8,7 +8,7 @@ export async function healthRoutes(app: FastifyInstance): Promise<void> {
     try {
       await prisma.$queryRaw`SELECT 1`;
       return { data: { status: 'ready' } };
-    } catch (err) {
+    } catch {
       reply.status(503);
       return { error: { code: 'NOT_READY', message: 'Database unreachable', details: {} } };
     }

@@ -14,6 +14,7 @@ const config = loadConfig({
 
 beforeEach(async () => {
   await prisma.tcoRun.deleteMany();
+  await prisma.scenario.deleteMany();
   await prisma.component.deleteMany();
   await prisma.assembly.deleteMany();
   await prisma.systemNode.deleteMany();
@@ -140,5 +141,115 @@ describe('tco runs', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(historyRes.json().data).toHaveLength(1);
+  });
+
+  it('applies scenario assumptions to the TCO run and produces the expected result', async () => {
+    const app = await buildApp(config);
+    const { token, locomotiveId } = await setupLocomotiveWithComponent(app);
+
+    // Component: lifeYears 5, warrantyYears 7, replacementCost 10000, laborCostPct 18
+    // (event cost = 10000 + 1800 = 11800), weibullBeta 2, weibullEta 50000.
+    //
+    // Scenario doubles maintenance frequency (effective lifeYears = 5/2 = 2.5),
+    // extends warranty by 3 years (7 -> 10), and doubles the failure rate.
+    const scenarioRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/scenarios',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: 'Doubled Maintenance + Extended Warranty',
+        planningHorizonYears: 20,
+        discountRate: 5,
+        laborRate: 100,
+        maintenanceIntervalMultiplier: 2,
+        failureRateMultiplier: 2,
+        warrantyExtendedYears: 3,
+        fuelCostPerLiter: 1.5,
+        inflationEnabled: false,
+        includeDowntime: false,
+      },
+    });
+    expect(scenarioRes.statusCode).toBe(201);
+    const scenarioId = scenarioRes.json().data.id;
+
+    const baselineRun = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tco/runs',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { locomotiveId, horizonYears: 20 },
+    });
+    const baseline = baselineRun.json().data.outputs;
+    // Events at 5,10,15,20 -> 4 events, only year-5 under warranty (<=7).
+    expect(baseline.rows[0].eventCount).toBe(4);
+    expect(baseline.warrantyCoveredCost).toBe(11800);
+    expect(baseline.totalCost).toBe(4 * 11800);
+
+    const scenarioRun = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tco/runs',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { locomotiveId, scenarioId },
+    });
+    expect(scenarioRun.statusCode).toBe(201);
+    const scenario = scenarioRun.json().data.outputs;
+    const run = scenarioRun.json().data;
+
+    // horizonYears defaulted from the scenario's planningHorizonYears (20),
+    // even though the request body didn't supply one.
+    expect(run.horizonYears).toBe(20);
+    // Effective interval 2.5y over 20y -> events at 2.5,5,7.5,10,12.5,15,17.5,20 = 8 events.
+    expect(scenario.rows[0].eventCount).toBe(8);
+    // Warranty now 10y: events at 2.5,5,7.5,10 are covered = 4 of 8.
+    expect(scenario.warrantyCoveredCost).toBe(4 * 11800);
+    expect(scenario.totalCost).toBe(8 * 11800);
+    expect(scenario.customerTCO).toBe(scenario.totalCost - scenario.warrantyCoveredCost);
+
+    // Buffer = replacementCost * weibullFailureProbability(ageHours, beta, eta) * failureRateMultiplier.
+    const ageHours = 20 * 4500;
+    const weibull = 1 - Math.exp(-Math.pow(ageHours / 50000, 2));
+    const expectedBuffer = 10000 * weibull * 2;
+    expect(scenario.buffer).toBeCloseTo(expectedBuffer, 4);
+
+    // The scenario-driven run must cost strictly more than the baseline run
+    // (more frequent maintenance + doubled failure reserve).
+    expect(scenario.totalCost).toBeGreaterThan(baseline.totalCost);
+  });
+
+  it('rejects a scenarioId from another organization with 404', async () => {
+    const app = await buildApp(config);
+    const { token, locomotiveId } = await setupLocomotiveWithComponent(app);
+
+    const otherOrg = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: { organizationName: 'Other Org', email: 'admin@other.test', password: 'supersecret123' },
+    });
+    const otherToken = otherOrg.json().data.accessToken as string;
+    const otherScenario = await app.inject({
+      method: 'POST',
+      url: '/api/v1/scenarios',
+      headers: { authorization: `Bearer ${otherToken}` },
+      payload: {
+        name: 'Other Org Scenario',
+        planningHorizonYears: 10,
+        discountRate: 5,
+        laborRate: 100,
+        maintenanceIntervalMultiplier: 1,
+        failureRateMultiplier: 1,
+        warrantyExtendedYears: 0,
+        fuelCostPerLiter: 1,
+        inflationEnabled: false,
+        includeDowntime: false,
+      },
+    });
+    const otherScenarioId = otherScenario.json().data.id;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tco/runs',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { locomotiveId, scenarioId: otherScenarioId },
+    });
+    expect(res.statusCode).toBe(404);
   });
 });

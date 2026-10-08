@@ -47,17 +47,22 @@ documentation-only (see `src/app/openapi.ts`).
 
 ## Phase overview
 
-Phases 0–6 are implemented: discovery/architecture docs, health/config
+Phases 0–7 are implemented: discovery/architecture docs, health/config
 foundation, auth (Organization/User/Membership/RefreshToken, JWT access +
 rotated refresh), the Fleet/Asset domain (Fleet, OperatingProfile,
 Locomotive, SystemNode, Assembly, Component), the cost domain
-(MaintenanceSchedule, append-only CostRecord), and the canonical TCO engine
-(ported from the frontend's `tcoEngine.ts`, persisted as `TcoRun`).
+(MaintenanceSchedule, append-only CostRecord), the canonical TCO engine
+(adapted from the frontend's `tcoEngine.ts` — see
+`docs/TCO_ENGINE_SPECIFICATION.md` for exactly how it differs, persisted as
+`TcoRun`), OpenAPI documentation generated from the existing route schemas,
+and the Scenario domain (CRUD + scenario-driven TCO runs — new design, not a
+port; the frontend never actually applies a scenario to any calculation, see
+`docs/CANONICAL_DOMAIN_MODEL.md`).
 
-Scenario/simulation persistence, BOM/Parts/Vendors, forecasting/
-benchmarking/sustainability, integrations, reporting, and the frontend
-cutover are deliberately not built yet — see "Explicitly deferred" in
-`docs/CANONICAL_DOMAIN_MODEL.md` and the plan file this was built from.
+Monte Carlo simulation, BOM/Parts/Vendors, forecasting/benchmarking/
+sustainability, integrations, reporting, and the frontend cutover are
+deliberately not built yet — see "Explicitly deferred" in
+`docs/CANONICAL_DOMAIN_MODEL.md` and `docs/IMPLEMENTATION_LOG.md`.
 
 Full API surface: `docs/API_CONTRACT.md`. Schema: `docs/DATABASE_MODEL.md`.
 Module layout: `docs/ARCHITECTURE.md`.

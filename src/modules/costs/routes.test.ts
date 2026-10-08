@@ -13,8 +13,12 @@ const config = loadConfig({
 });
 
 beforeEach(async () => {
+  await prisma.tcoRun.deleteMany();
   await prisma.costRecord.deleteMany();
   await prisma.maintenanceSchedule.deleteMany();
+  await prisma.component.deleteMany();
+  await prisma.assembly.deleteMany();
+  await prisma.systemNode.deleteMany();
   await prisma.locomotive.deleteMany();
   await prisma.fleet.deleteMany();
   await prisma.refreshToken.deleteMany();

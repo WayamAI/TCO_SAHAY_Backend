@@ -6,8 +6,11 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
   // Route schemas below are documentation only - request validation stays
   // on the existing manual zod .parse() calls in each handler, so this never
   // changes API behavior. A no-op validator compiler keeps Fastify/ajv from
-  // also enforcing the attached JSON schemas.
+  // also enforcing the attached JSON schemas, and a no-op serializer
+  // compiler stops fast-json-stringify from stripping response fields the
+  // attached schema didn't declare (it otherwise silently reshapes output).
   app.setValidatorCompiler(() => () => true);
+  app.setSerializerCompiler(() => (data) => JSON.stringify(data));
 
   await app.register(swagger, {
     openapi: {

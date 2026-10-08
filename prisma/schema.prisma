@@ -116,9 +116,11 @@ model Locomotive {
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
-  fleet            Fleet            @relation(fields: [fleetId], references: [id])
-  operatingProfile OperatingProfile @relation(fields: [operatingProfileId], references: [id])
-  systems          SystemNode[]
+  fleet                Fleet                 @relation(fields: [fleetId], references: [id])
+  operatingProfile     OperatingProfile      @relation(fields: [operatingProfileId], references: [id])
+  systems              SystemNode[]
+  maintenanceSchedules MaintenanceSchedule[]
+  costRecords          CostRecord[]
 
   @@index([organizationId, fleetId])
 }
@@ -190,4 +192,56 @@ model ComponentDependency {
   dependsOnComponent  Component @relation("DependsOnTarget", fields: [dependsOnComponentId], references: [id], onDelete: Cascade)
 
   @@unique([componentId, dependsOnComponentId])
+}
+
+enum MaintenanceType {
+  PREVENTIVE
+  OVERHAUL
+  REBUILD
+}
+
+model MaintenanceSchedule {
+  id               String           @id @default(uuid())
+  organizationId   String
+  locomotiveId     String
+  name             String
+  triggerMonths    Float?
+  triggerKm        Float?
+  triggerHours     Float?
+  rule             String
+  laborHours       Float
+  laborRatePerHour Float
+  partsEstimate    Float
+  type             MaintenanceType
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  locomotive Locomotive @relation(fields: [locomotiveId], references: [id])
+
+  @@index([organizationId, locomotiveId])
+}
+
+enum CostCategory {
+  CAPEX
+  MAINTENANCE
+  CONSUMABLE
+  LABOR
+  FAILURE
+  WARRANTY
+  FUEL
+  DOWNTIME
+}
+
+model CostRecord {
+  id             String       @id @default(uuid())
+  organizationId String
+  locomotiveId   String
+  year           Int
+  category       CostCategory
+  amount         Float
+  createdAt      DateTime     @default(now())
+
+  locomotive Locomotive @relation(fields: [locomotiveId], references: [id])
+
+  @@index([organizationId, locomotiveId, year, category])
 }

@@ -4,6 +4,8 @@ import { prisma } from '../../db/client.js';
 import { buildAuthenticate, requireRole } from '../../shared/authenticate.js';
 import { NotFoundError, ValidationError } from '../../shared/errors.js';
 import { paginationArgs, paginationMeta, paginationSchema } from '../../shared/pagination.js';
+import { z2j } from '../../shared/zodSchema.js';
+import { bearerAuth, dataResponse, errorResponse } from '../../shared/openapiEnvelope.js';
 
 const locomotiveSchema = z.object({
   fleetId: z.string().min(1),
@@ -41,24 +43,51 @@ const componentSchema = z.object({
   downtimeCostPerDay: z.number().nonnegative(),
 });
 
+const idParamsSchema = z.object({ id: z.string() });
+
+// Loose object - Prisma row shape, not re-declared field-by-field here to
+// avoid duplicating prisma/schema.prisma as a second source of truth.
+const entitySchema = z.object({}).passthrough();
+
 export async function assetRoutes(app: FastifyInstance): Promise<void> {
   const authenticate = buildAuthenticate(app.config.JWT_ACCESS_SECRET);
   const orgId = (request: { user?: { organizationId: string } }) => request.user!.organizationId;
 
-  app.get('/locomotives', { preHandler: authenticate }, async (request) => {
-    const pagination = paginationSchema.parse(request.query);
-    const { fleetId } = request.query as { fleetId?: string };
-    const where = { organizationId: orgId(request), ...(fleetId ? { fleetId } : {}), deletedAt: null };
-    const [items, total] = await Promise.all([
-      prisma.locomotive.findMany({ where, ...paginationArgs(pagination), orderBy: { createdAt: 'desc' } }),
-      prisma.locomotive.count({ where }),
-    ]);
-    return { data: items, meta: paginationMeta(pagination, total) };
-  });
+  app.get(
+    '/locomotives',
+    {
+      preHandler: authenticate,
+      schema: {
+        tags: ['assets'],
+        summary: 'List locomotives, optionally filtered by fleetId',
+        security: bearerAuth,
+        response: { 200: dataResponse({ type: 'array', items: z2j(entitySchema) }) },
+      },
+    },
+    async (request) => {
+      const pagination = paginationSchema.parse(request.query);
+      const { fleetId } = request.query as { fleetId?: string };
+      const where = { organizationId: orgId(request), ...(fleetId ? { fleetId } : {}), deletedAt: null };
+      const [items, total] = await Promise.all([
+        prisma.locomotive.findMany({ where, ...paginationArgs(pagination), orderBy: { createdAt: 'desc' } }),
+        prisma.locomotive.count({ where }),
+      ]);
+      return { data: items, meta: paginationMeta(pagination, total) };
+    },
+  );
 
   app.post(
     '/locomotives',
-    { preHandler: [authenticate, requireRole('ADMIN', 'MANAGER')] },
+    {
+      preHandler: [authenticate, requireRole('ADMIN', 'MANAGER')],
+      schema: {
+        tags: ['assets'],
+        summary: 'Create a locomotive',
+        security: bearerAuth,
+        body: z2j(locomotiveSchema),
+        response: { 201: dataResponse(z2j(entitySchema)), 400: errorResponse, 403: errorResponse, 404: errorResponse },
+      },
+    },
     async (request, reply) => {
       const body = locomotiveSchema.parse(request.body);
       if (body.commissionYear > new Date().getFullYear()) {
@@ -78,19 +107,42 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.get('/locomotives/:id', { preHandler: authenticate }, async (request) => {
-    const { id } = request.params as { id: string };
-    const locomotive = await prisma.locomotive.findFirst({
-      where: { id, organizationId: orgId(request), deletedAt: null },
-      include: { systems: { include: { assemblies: { include: { components: true } } } } },
-    });
-    if (!locomotive) throw new NotFoundError('Locomotive');
-    return { data: locomotive };
-  });
+  app.get(
+    '/locomotives/:id',
+    {
+      preHandler: authenticate,
+      schema: {
+        tags: ['assets'],
+        summary: 'Get a locomotive with its full system/assembly/component tree',
+        security: bearerAuth,
+        params: z2j(idParamsSchema),
+        response: { 200: dataResponse(z2j(entitySchema)), 404: errorResponse },
+      },
+    },
+    async (request) => {
+      const { id } = request.params as { id: string };
+      const locomotive = await prisma.locomotive.findFirst({
+        where: { id, organizationId: orgId(request), deletedAt: null },
+        include: { systems: { include: { assemblies: { include: { components: true } } } } },
+      });
+      if (!locomotive) throw new NotFoundError('Locomotive');
+      return { data: locomotive };
+    },
+  );
 
   app.patch(
     '/locomotives/:id',
-    { preHandler: [authenticate, requireRole('ADMIN', 'MANAGER')] },
+    {
+      preHandler: [authenticate, requireRole('ADMIN', 'MANAGER')],
+      schema: {
+        tags: ['assets'],
+        summary: 'Update a locomotive',
+        security: bearerAuth,
+        params: z2j(idParamsSchema),
+        body: z2j(locomotiveUpdateSchema),
+        response: { 200: dataResponse(z2j(entitySchema)), 403: errorResponse, 404: errorResponse },
+      },
+    },
     async (request) => {
       const { id } = request.params as { id: string };
       const body = locomotiveUpdateSchema.parse(request.body);
@@ -105,7 +157,16 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     '/locomotives/:id',
-    { preHandler: [authenticate, requireRole('ADMIN')] },
+    {
+      preHandler: [authenticate, requireRole('ADMIN')],
+      schema: {
+        tags: ['assets'],
+        summary: 'Soft-delete a locomotive (ADMIN only)',
+        security: bearerAuth,
+        params: z2j(idParamsSchema),
+        response: { 200: dataResponse(), 403: errorResponse, 404: errorResponse },
+      },
+    },
     async (request) => {
       const { id } = request.params as { id: string };
       const existing = await prisma.locomotive.findFirst({
@@ -117,22 +178,45 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
-  app.get('/locomotives/:id/components', { preHandler: authenticate }, async (request) => {
-    const { id } = request.params as { id: string };
-    const locomotive = await prisma.locomotive.findFirst({
-      where: { id, organizationId: orgId(request), deletedAt: null },
-    });
-    if (!locomotive) throw new NotFoundError('Locomotive');
-    const components = await prisma.component.findMany({
-      where: { organizationId: orgId(request), assembly: { systemNode: { locomotiveId: id } }, deletedAt: null },
-      include: { dependsOn: true },
-    });
-    return { data: components };
-  });
+  app.get(
+    '/locomotives/:id/components',
+    {
+      preHandler: authenticate,
+      schema: {
+        tags: ['assets'],
+        summary: 'List a locomotive’s components with dependency edges',
+        security: bearerAuth,
+        params: z2j(idParamsSchema),
+        response: { 200: dataResponse({ type: 'array', items: z2j(entitySchema) }), 404: errorResponse },
+      },
+    },
+    async (request) => {
+      const { id } = request.params as { id: string };
+      const locomotive = await prisma.locomotive.findFirst({
+        where: { id, organizationId: orgId(request), deletedAt: null },
+      });
+      if (!locomotive) throw new NotFoundError('Locomotive');
+      const components = await prisma.component.findMany({
+        where: { organizationId: orgId(request), assembly: { systemNode: { locomotiveId: id } }, deletedAt: null },
+        include: { dependsOn: true },
+      });
+      return { data: components };
+    },
+  );
 
   app.post(
     '/locomotives/:id/components',
-    { preHandler: [authenticate, requireRole('ADMIN', 'MANAGER')] },
+    {
+      preHandler: [authenticate, requireRole('ADMIN', 'MANAGER')],
+      schema: {
+        tags: ['assets'],
+        summary: 'Add a component to a locomotive',
+        security: bearerAuth,
+        params: z2j(idParamsSchema),
+        body: z2j(componentSchema),
+        response: { 201: dataResponse(z2j(entitySchema)), 404: errorResponse },
+      },
+    },
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const body = componentSchema.parse(request.body);
@@ -154,7 +238,17 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
 
   app.patch(
     '/components/:id',
-    { preHandler: [authenticate, requireRole('ADMIN', 'MANAGER')] },
+    {
+      preHandler: [authenticate, requireRole('ADMIN', 'MANAGER')],
+      schema: {
+        tags: ['assets'],
+        summary: 'Update a component',
+        security: bearerAuth,
+        params: z2j(idParamsSchema),
+        body: z2j(componentSchema.partial()),
+        response: { 200: dataResponse(z2j(entitySchema)), 404: errorResponse },
+      },
+    },
     async (request) => {
       const { id } = request.params as { id: string };
       const body = componentSchema.partial().parse(request.body);
@@ -169,7 +263,16 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete(
     '/components/:id',
-    { preHandler: [authenticate, requireRole('ADMIN')] },
+    {
+      preHandler: [authenticate, requireRole('ADMIN')],
+      schema: {
+        tags: ['assets'],
+        summary: 'Soft-delete a component (ADMIN only)',
+        security: bearerAuth,
+        params: z2j(idParamsSchema),
+        response: { 200: dataResponse(), 404: errorResponse },
+      },
+    },
     async (request) => {
       const { id } = request.params as { id: string };
       const existing = await prisma.component.findFirst({

@@ -10,6 +10,7 @@ import { fleetRoutes } from '../modules/fleets/routes.js';
 import { assetRoutes } from '../modules/assets/routes.js';
 import { costRoutes } from '../modules/costs/routes.js';
 import { tcoRoutes } from '../modules/tco/routes.js';
+import { registerOpenApi } from './openapi.js';
 
 declare module 'fastify' {
   interface FastifyInstance {
@@ -24,6 +25,8 @@ export async function buildApp(config: Config = loadConfig()): Promise<FastifyIn
   await app.register(cors, { origin: config.CORS_ORIGINS.split(',') });
 
   app.setErrorHandler(errorHandler);
+
+  await registerOpenApi(app);
 
   await app.register(healthRoutes);
   await app.register(authRoutes, { prefix: '/api/v1' });

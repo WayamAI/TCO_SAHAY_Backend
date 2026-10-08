@@ -10,6 +10,7 @@ import { fleetRoutes } from '../modules/fleets/routes.js';
 import { assetRoutes } from '../modules/assets/routes.js';
 import { costRoutes } from '../modules/costs/routes.js';
 import { tcoRoutes } from '../modules/tco/routes.js';
+import { scenarioRoutes } from '../modules/scenarios/routes.js';
 import { registerOpenApi } from './openapi.js';
 
 declare module 'fastify' {
@@ -36,6 +37,7 @@ export async function buildApp(config: Config = loadConfig()): Promise<FastifyIn
   await app.register(assetRoutes, { prefix: '/api/v1' });
   await app.register(costRoutes, { prefix: '/api/v1' });
   await app.register(tcoRoutes, { prefix: '/api/v1' });
+  await app.register(scenarioRoutes, { prefix: '/api/v1' });
 
   return app;
 }

@@ -8,7 +8,8 @@ import { bearerAuth, dataResponse, errorResponse } from '../../shared/openapiEnv
 
 const runSchema = z.object({
   locomotiveId: z.string().min(1),
-  horizonYears: z.number().int().positive().max(100),
+  horizonYears: z.number().int().positive().max(100).optional(),
+  scenarioId: z.string().min(1).optional(),
 });
 
 const runIdParamsSchema = z.object({ id: z.string() });
@@ -44,6 +45,7 @@ export async function tcoRoutes(app: FastifyInstance): Promise<void> {
         organizationId: request.user!.organizationId,
         locomotiveId: body.locomotiveId,
         horizonYears: body.horizonYears,
+        scenarioId: body.scenarioId,
         userId: request.user!.userId,
       });
       reply.status(201);

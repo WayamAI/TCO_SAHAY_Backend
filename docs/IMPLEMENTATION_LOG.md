@@ -149,3 +149,96 @@ onto `TcoRun` itself, since a simulation run has a materially different
 output shape: percentile distributions, not a single breakdown) and write
 that decision into a new `docs/SIMULATION_ENGINE_SPECIFICATION.md` before
 touching schema or code, same discipline as this phase.
+
+## 2026-10-09 — Phase 8: Simulation Engine (Monte Carlo)
+
+**Objective:** add a Monte Carlo simulation capability that reuses the
+canonical TCO engine per trial, producing a `totalCost` distribution
+(summary stats, percentiles, histogram) alongside — never replacing — the
+deterministic `TcoRun`.
+
+**Spec decisions** (`docs/SIMULATION_ENGINE_SPECIFICATION.md`, written
+first): only two stochastic variables are justified — a failure-rate
+multiplier (lognormal, median = scenario's `failureRateMultiplier` or 1,
+CoV 0.25) and a cost multiplier (triangular, 0.85/1.0/1.2, fixed constants).
+No other Scenario field is newly applied. Raw trials are never persisted,
+only config + summary + percentiles + a 20-bin histogram. Seed is a string,
+caller-supplied or generated, hashed into a `mulberry32` PRNG — `Math.random`
+is never used in a trial.
+
+**Implementation decisions:**
+- `src/modules/simulation/rng.ts` — seeded PRNG + seed generator.
+- `src/modules/simulation/distributions.ts` — lognormal (via Box-Muller
+  standard normal) and triangular samplers only.
+- `src/modules/simulation/statistics.ts` — mean/median/variance/stddev,
+  linear-interpolated percentiles, equal-width histogram.
+- `src/modules/simulation/engine.ts` — `runSimulation()` samples both
+  multipliers per trial and calls `locomotiveTco()` from
+  `tco/engine.ts` unchanged — no second TCO calculation path. Validates
+  iterations (100–10,000) and numeric safety (NaN/Infinity/negative) before
+  returning.
+- `src/modules/simulation/service.ts` — resolves locomotive/scenario with
+  the exact same field mapping as `tco/service.ts`'s `runTco()`, then
+  persists a `SimulationRun`.
+- `src/modules/simulation/routes.ts` — `POST /simulation-runs`,
+  `GET /simulation-runs/:id`, `GET /locomotives/:id/simulation-runs`. No
+  `DELETE`, following `TcoRun`'s precedent (only `Scenario` has hard delete).
+
+**Schema changes:** new `SimulationRun` model (migration
+`20261009045024_simulation_runs`) alongside `TcoRun`: `organizationId`,
+`locomotiveId`, `scenarioId?`, `horizonYears`, `iterations`, `seed`,
+`engineVersion`, `config`/`summary`/`percentiles`/`histogram` JSON,
+`createdByUserId`, `createdAt`. Indexed the same way as `TcoRun`.
+
+**API changes:** 3 new endpoints under `/api/v1`, documented in OpenAPI
+(`tags: ['simulation']`); `/simulation-runs` paths now appear in
+`/openapi.json` (asserted by a new test mirroring commit 5ef4d84's pattern
+for Scenario).
+
+**Performance / sync vs async:** benchmarked `runSimulation` directly (8
+components, horizon 20y): 100 iterations ≈ 2.7ms, 1,000 ≈ 12.5ms, 10,000 ≈
+68ms. All well within a synchronous HTTP request/response; no queue, worker,
+or Redis was added. Iteration limits: min 100, default 1000, max 10,000.
+
+**Tests (all passing, 72/72 total suite, up from the 30/30 baseline — no
+existing test was touched or weakened):**
+- `rng.test.ts` (4): deterministic sequence, distinct seeds, range, seed
+  generator uniqueness.
+- `distributions.test.ts` (9): lognormal positivity/median/invalid params,
+  triangular bounds/degenerate case/invalid params, standard normal mean.
+- `statistics.test.ts` (11): single-value, identical-value, unsorted-input,
+  empty-input, histogram collapse/distribution/empty.
+- `engine.test.ts` (11): exact-equality reproducibility for identical
+  seed/inputs/iterations, distinct output structure for a different seed,
+  stochastic variance, iteration min/default/max acceptance and rejection,
+  invalid `baseFailureMultiplier`/empty components/empty seed rejection.
+- `routes.test.ts` (7): create/retrieve/list, response fields not stripped
+  by the Fastify response schema, reproducibility over HTTP, distinct
+  auto-generated seeds, default/min/max iteration validation over HTTP, auth
+  required, cross-tenant read/list rejection at both the HTTP layer and
+  directly via the service function (bypassing route middleware), unknown
+  locomotive 404.
+- `openapi.test.ts` extension (existing file, +1 assertion set): the 3 new
+  paths appear in the generated spec.
+
+**Validation results:** `pnpm lint` clean, `pnpm typecheck` clean, `pnpm
+test` 72/72, `pnpm run build` clean, `npx prisma validate` valid, `npx prisma
+migrate status` up to date (6 migrations). `git status --short` clean after
+every commit.
+
+**Known limitations / deferred work:**
+- Only `totalCost` is simulated; `customerTCO`/`organizationTCO`
+  distributions are a derivable future addition, not built here (see spec's
+  "Why `totalCost`").
+- `laborRate`, `inflationEnabled`, `includeDowntime`, `fuelCostPerLiter`
+  remain unapplied by both the TCO and simulation engines — unchanged from
+  Phase 7, not reinterpreted as simulation inputs.
+- No CI pipeline (unchanged from Phase 7 — out of scope for Phase 8 too).
+- Cost-multiplier triangular parameters (0.85/1.0/1.2) are fixed constants,
+  not yet exposed as a request input — a reasonable next increment if a real
+  per-locomotive cost-variance need appears.
+- Git: started this phase at 69 commits (post-Phase-7); Phase 8 added 13
+  commits (spec, rng+test, distributions+test, statistics+test, engine+test,
+  prisma schema, migration, service, routes+buildApp registration, openapi
+  test update, routes integration test, this log entry, remaining doc
+  updates) for a final total of 82+ on `feature/phase-8-simulation-engine`.

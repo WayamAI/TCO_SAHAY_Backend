@@ -10,7 +10,8 @@ Organization
            │         └── Component
            ├── MaintenanceSchedule
            ├── CostRecord
-           └── TcoRun
+           ├── TcoRun
+           └── SimulationRun
 
 OperatingProfile  (org-scoped lookup, referenced by Locomotive and optionally by Scenario)
 Scenario          (org-scoped, fleet-agnostic assumption bundle; TcoRun.scenarioId optionally references it)
@@ -81,6 +82,20 @@ scope) + computed outputs (customerCost, organizationCost, breakdown JSON).
 This is the one place a JSON column is justified — the breakdown shape is
 genuinely variable (per-part/per-category rows) and is never queried by its
 internal fields, only displayed back whole.
+
+## SimulationRun (Phase 8)
+
+A separate table alongside `TcoRun`, not a replacement for it: `TcoRun` is
+the deterministic baseline (one set of inputs -> one breakdown);
+`SimulationRun` is the Monte Carlo distribution of `totalCost` across many
+trials, each trial being a full re-run of the same canonical TCO engine with
+a sampled failure-rate multiplier and cost multiplier (see
+`SIMULATION_ENGINE_SPECIFICATION.md`). Stores `seed`, `iterations`,
+`engineVersion`, a `config` input snapshot, and `summary`/`percentiles`/
+`histogram` JSON outputs — never the raw per-trial values (hundreds of bytes
+per run, not thousands of rows). Both a `TcoRun` and a `SimulationRun` can
+exist independently for the same locomotive/scenario; a client wanting
+"baseline vs spread" issues both calls.
 
 ## Scenario (Phase 7)
 

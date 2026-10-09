@@ -15,25 +15,26 @@ enum Role {
 }
 
 model Organization {
-  id         String   @id @default(uuid())
-  name       String
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(uuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   memberships Membership[]
 }
 
 model User {
-  id             String    @id @default(uuid())
-  email          String    @unique
-  passwordHash   String
-  deactivatedAt  DateTime?
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  id            String    @id @default(uuid())
+  email         String    @unique
+  passwordHash  String
+  deactivatedAt DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  memberships   Membership[]
-  refreshTokens RefreshToken[]
-  tcoRuns       TcoRun[]
+  memberships    Membership[]
+  refreshTokens  RefreshToken[]
+  tcoRuns        TcoRun[]
+  simulationRuns SimulationRun[]
 }
 
 model Membership {
@@ -124,6 +125,7 @@ model Locomotive {
   maintenanceSchedules MaintenanceSchedule[]
   costRecords          CostRecord[]
   tcoRuns              TcoRun[]
+  simulationRuns       SimulationRun[]
 
   @@index([organizationId, fleetId])
 }
@@ -179,20 +181,20 @@ model Component {
   healthScore        Float     @default(100)
   deletedAt          DateTime?
 
-  assembly         Assembly               @relation(fields: [assemblyId], references: [id])
-  dependsOn        ComponentDependency[]  @relation("DependsOn")
-  dependents       ComponentDependency[]  @relation("DependsOnTarget")
+  assembly   Assembly              @relation(fields: [assemblyId], references: [id])
+  dependsOn  ComponentDependency[] @relation("DependsOn")
+  dependents ComponentDependency[] @relation("DependsOnTarget")
 
   @@index([organizationId, assemblyId])
 }
 
 model ComponentDependency {
-  id                    String @id @default(uuid())
-  componentId           String
-  dependsOnComponentId  String
+  id                   String @id @default(uuid())
+  componentId          String
+  dependsOnComponentId String
 
   component          Component @relation("DependsOn", fields: [componentId], references: [id], onDelete: Cascade)
-  dependsOnComponent  Component @relation("DependsOnTarget", fields: [dependsOnComponentId], references: [id], onDelete: Cascade)
+  dependsOnComponent Component @relation("DependsOnTarget", fields: [dependsOnComponentId], references: [id], onDelete: Cascade)
 
   @@unique([componentId, dependsOnComponentId])
 }
@@ -204,7 +206,7 @@ enum MaintenanceType {
 }
 
 model MaintenanceSchedule {
-  id               String           @id @default(uuid())
+  id               String          @id @default(uuid())
   organizationId   String
   locomotiveId     String
   name             String
@@ -216,8 +218,8 @@ model MaintenanceSchedule {
   laborRatePerHour Float
   partsEstimate    Float
   type             MaintenanceType
-  createdAt        DateTime         @default(now())
-  updatedAt        DateTime         @updatedAt
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
 
   locomotive Locomotive @relation(fields: [locomotiveId], references: [id])
 
@@ -268,25 +270,50 @@ model TcoRun {
   @@index([scenarioId])
 }
 
+model SimulationRun {
+  id              String   @id @default(uuid())
+  organizationId  String
+  locomotiveId    String
+  scenarioId      String?
+  horizonYears    Int
+  iterations      Int
+  seed            String
+  engineVersion   String
+  config          Json
+  summary         Json
+  percentiles     Json
+  histogram       Json
+  createdByUserId String
+  createdAt       DateTime @default(now())
+
+  locomotive Locomotive @relation(fields: [locomotiveId], references: [id])
+  scenario   Scenario?  @relation(fields: [scenarioId], references: [id], onDelete: SetNull)
+  createdBy  User       @relation(fields: [createdByUserId], references: [id])
+
+  @@index([organizationId, locomotiveId])
+  @@index([scenarioId])
+}
+
 model Scenario {
-  id                           String   @id @default(uuid())
-  organizationId               String
-  name                         String
-  planningHorizonYears         Int
-  discountRate                 Float
-  laborRate                    Float
+  id                            String   @id @default(uuid())
+  organizationId                String
+  name                          String
+  planningHorizonYears          Int
+  discountRate                  Float
+  laborRate                     Float
   maintenanceIntervalMultiplier Float
-  failureRateMultiplier        Float
-  warrantyExtendedYears        Float
-  fuelCostPerLiter             Float
-  inflationEnabled             Boolean
-  includeDowntime              Boolean
-  operatingProfileId           String?
-  createdAt                    DateTime @default(now())
-  updatedAt                    DateTime @updatedAt
+  failureRateMultiplier         Float
+  warrantyExtendedYears         Float
+  fuelCostPerLiter              Float
+  inflationEnabled              Boolean
+  includeDowntime               Boolean
+  operatingProfileId            String?
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
 
   operatingProfile OperatingProfile? @relation(fields: [operatingProfileId], references: [id])
   tcoRuns          TcoRun[]
+  simulationRuns   SimulationRun[]
 
   @@index([organizationId])
 }

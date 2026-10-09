@@ -72,6 +72,18 @@ are JSON because they're write-once, read-whole, never filtered by internal
 field — the one place a JSON column is justified per the no-blob rule.
 `scenarioId` is nullable because most runs (Phase 6) have no scenario.
 
+**SimulationRun** (Phase 8) — `id`, `organizationId`, `locomotiveId
+FK→Locomotive`, `scenarioId FK→Scenario NULL`, `horizonYears`, `iterations`,
+`seed`, `engineVersion`, `config JSONB`, `summary JSONB`, `percentiles
+JSONB`, `histogram JSONB`, `createdAt`, `createdByUserId FK→User`. Same
+JSON-column justification as `TcoRun` (write-once, read-whole). No
+`updatedAt`/soft delete — a simulation run is immutable once created, same
+as `TcoRun`. `scenarioId` uses `onDelete: SetNull` like `TcoRun.scenarioId`,
+for the same reason: the run's `config` snapshot keeps its own copy of the
+resolved values, so history survives scenario deletion. Owned by
+`organizationId`/`locomotiveId`/`createdByUserId` for tenant isolation,
+identical pattern to `TcoRun`.
+
 **Scenario** — `id`, `organizationId`, `name`, `planningHorizonYears`,
 `discountRate` (stored, not yet applied by the engine - see
 `TCO_ENGINE_SPECIFICATION.md`), `laborRate` (stored, not yet applied),
@@ -89,8 +101,8 @@ applied values in `inputs`, so history survives the scenario's deletion.
 
 - Every FK column is indexed (Prisma does this by default for relations).
 - `(organizationId, fleetId)` on Locomotive, `(organizationId, locomotiveId)`
-  on SystemNode/MaintenanceSchedule/CostRecord/TcoRun — the common
-  "list children of X within my org" query shape.
+  on SystemNode/MaintenanceSchedule/CostRecord/TcoRun/SimulationRun — the
+  common "list children of X within my org" query shape.
 - `User.email` unique index (login lookup).
 - `RefreshToken.tokenHash` unique index (refresh lookup/revocation).
 

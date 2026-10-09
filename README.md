@@ -47,7 +47,7 @@ documentation-only (see `src/app/openapi.ts`).
 
 ## Phase overview
 
-Phases 0–7 are implemented: discovery/architecture docs, health/config
+Phases 0–8 are implemented: discovery/architecture docs, health/config
 foundation, auth (Organization/User/Membership/RefreshToken, JWT access +
 rotated refresh), the Fleet/Asset domain (Fleet, OperatingProfile,
 Locomotive, SystemNode, Assembly, Component), the cost domain
@@ -55,12 +55,14 @@ Locomotive, SystemNode, Assembly, Component), the cost domain
 (adapted from the frontend's `tcoEngine.ts` — see
 `docs/TCO_ENGINE_SPECIFICATION.md` for exactly how it differs, persisted as
 `TcoRun`), OpenAPI documentation generated from the existing route schemas,
-and the Scenario domain (CRUD + scenario-driven TCO runs — new design, not a
+the Scenario domain (CRUD + scenario-driven TCO runs — new design, not a
 port; the frontend never actually applies a scenario to any calculation, see
-`docs/CANONICAL_DOMAIN_MODEL.md`).
+`docs/CANONICAL_DOMAIN_MODEL.md`), and a Monte Carlo simulation engine
+(`SimulationRun`, synchronous, seeded/reproducible, reusing the canonical
+TCO engine per trial — see `docs/SIMULATION_ENGINE_SPECIFICATION.md`).
 
-Monte Carlo simulation, BOM/Parts/Vendors, forecasting/benchmarking/
-sustainability, integrations, reporting, and the frontend cutover are
+BOM/Parts/Vendors, forecasting/benchmarking/sustainability, integrations,
+reporting, CI, async simulation workers, and the frontend cutover are
 deliberately not built yet — see "Explicitly deferred" in
 `docs/CANONICAL_DOMAIN_MODEL.md` and `docs/IMPLEMENTATION_LOG.md`.
 

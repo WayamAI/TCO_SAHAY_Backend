@@ -110,6 +110,28 @@ profile for that run's annual-hours figure, and its
 explicit `horizonYears`. See `TCO_ENGINE_SPECIFICATION.md` for the exact
 per-field mapping and which Scenario fields are stored but not yet applied.
 
+## Simulation engine (Phase 8)
+
+Monte Carlo simulation over the same canonical TCO engine — see
+`SIMULATION_ENGINE_SPECIFICATION.md`. Distinct from, and retrievable
+alongside, a deterministic `TcoRun`.
+
+| Method | Path | Auth | Body | Notes |
+|---|---|---|---|---|
+| POST | `/simulation-runs` | bearer | `{locomotiveId, horizonYears?, scenarioId?, iterations?, seed?}` | runs `iterations` trials (default 1000, min 100, max 10000), persists a `SimulationRun` with `totalCost` summary/percentiles/histogram |
+| GET | `/simulation-runs/:id` | bearer | | re-fetch a prior run |
+| GET | `/locomotives/:id/simulation-runs` | bearer | | history of simulation runs for one locomotive |
+
+No `DELETE` — follows `TcoRun`'s precedent (only `Scenario` has hard
+delete). `scenarioId` resolution is identical to `POST /tco/runs`: its
+`maintenanceIntervalMultiplier`/`warrantyExtendedYears` apply to each
+component, its `operatingProfileId` overrides annual hours, its
+`planningHorizonYears` is the default horizon, and its
+`failureRateMultiplier` becomes the *median* of the trial-sampled
+failure-rate multiplier (not applied as a flat multiplier the way
+`POST /tco/runs` applies it). `seed`, if omitted, is generated server-side
+and returned on the created run so the exact run can be replayed.
+
 ## Error codes used across all of the above
 
 `VALIDATION_ERROR` (400), `UNAUTHENTICATED` (401), `INVALID_CREDENTIALS` (401),
@@ -119,6 +141,5 @@ trace to the client — logged server-side with the request id instead).
 
 ## Explicitly out of scope here
 
-`/scenarios`, `/simulations`, `/parts`, `/vendors`, `/benchmarks`,
-`/forecasts`, `/integrations`, `/reports` — each is a later phase's own
-contract addition.
+`/parts`, `/vendors`, `/benchmarks`, `/forecasts`, `/integrations`,
+`/reports` — each is a later phase's own contract addition.

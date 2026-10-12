@@ -109,3 +109,130 @@ describe('fleets and locomotives', () => {
     expect(crossOrgFleet.statusCode).toBe(404);
   });
 });
+
+async function setupLocomotive(app: Awaited<ReturnType<typeof buildApp>>, token: string) {
+  const profiles = await app.inject({
+    method: 'GET',
+    url: '/api/v1/operating-profiles',
+    headers: { authorization: `Bearer ${token}` },
+  });
+  const profileId = profiles.json().data[0].id;
+  const fleetRes = await app.inject({
+    method: 'POST',
+    url: '/api/v1/fleets',
+    headers: { authorization: `Bearer ${token}` },
+    payload: { name: 'Main Fleet' },
+  });
+  const fleetId = fleetRes.json().data.id;
+  const locoRes = await app.inject({
+    method: 'POST',
+    url: '/api/v1/locomotives',
+    headers: { authorization: `Bearer ${token}` },
+    payload: {
+      fleetId,
+      operatingProfileId: profileId,
+      model: 'ES44AC',
+      manufacturer: 'GE',
+      type: 'Diesel',
+      horsepower: 4400,
+      purchaseCost: 2500000,
+      commissionYear: 2015,
+      plannedLifeYears: 30,
+      annualKm: 180000,
+      annualHours: 4500,
+      fuelType: 'Diesel',
+      fuelCostPerUnit: 0.9,
+      status: 'Active',
+    },
+  });
+  return locoRes.json().data.id as string;
+}
+
+describe('system/assembly hierarchy', () => {
+  it('creates a system and an assembly under it via HTTP, buildable end to end', async () => {
+    const app = await buildApp(config);
+    const token = await registerAndGetToken(app, 'tree');
+    const locomotiveId = await setupLocomotive(app, token);
+
+    const systemRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'Propulsion', icon: 'engine', criticality: 'High' },
+    });
+    expect(systemRes.statusCode).toBe(201);
+    const systemId = systemRes.json().data.id;
+
+    const assemblyRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}/assemblies`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'Traction' },
+    });
+    expect(assemblyRes.statusCode).toBe(201);
+    const assemblyId = assemblyRes.json().data.id;
+
+    // A component can now be created against this assembly through the
+    // pre-existing component route, proving the tree is fully API-buildable.
+    const componentRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/components`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        assemblyId,
+        name: 'Traction Motor',
+        purchaseCost: 10000,
+        replacementCost: 10000,
+        lifeYears: 5,
+        mtbfHours: 40000,
+        weibullBeta: 2,
+        weibullEta: 50000,
+        mttrHours: 12,
+        warrantyYears: 7,
+        laborCostPct: 18,
+        failureImpact: 'High',
+        category: 'Propulsion',
+        downtimeCostPerDay: 5000,
+      },
+    });
+    expect(componentRes.statusCode).toBe(201);
+
+    const tree = await app.inject({
+      method: 'GET',
+      url: `/api/v1/locomotives/${locomotiveId}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(tree.json().data.systems[0].assemblies[0].components).toHaveLength(1);
+  });
+
+  it('rejects creating a system or assembly on another organization’s locomotive', async () => {
+    const app = await buildApp(config);
+    const tokenA = await registerAndGetToken(app, 'owner');
+    const tokenB = await registerAndGetToken(app, 'intruder');
+    const locomotiveId = await setupLocomotive(app, tokenA);
+
+    const crossOrgSystem = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems`,
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { name: 'Propulsion', icon: 'engine', criticality: 'High' },
+    });
+    expect(crossOrgSystem.statusCode).toBe(404);
+
+    const ownSystem = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { name: 'Propulsion', icon: 'engine', criticality: 'High' },
+    });
+    const systemId = ownSystem.json().data.id;
+
+    const crossOrgAssembly = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}/assemblies`,
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { name: 'Traction' },
+    });
+    expect(crossOrgAssembly.statusCode).toBe(404);
+  });
+});

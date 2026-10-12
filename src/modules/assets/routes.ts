@@ -26,6 +26,16 @@ const locomotiveSchema = z.object({
 
 const locomotiveUpdateSchema = locomotiveSchema.partial();
 
+const systemNodeSchema = z.object({
+  name: z.string().min(1),
+  icon: z.string().min(1),
+  criticality: z.string().min(1),
+});
+
+const assemblySchema = z.object({
+  name: z.string().min(1),
+});
+
 const componentSchema = z.object({
   assemblyId: z.string().uuid(),
   name: z.string().min(1),
@@ -175,6 +185,62 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
       if (!existing) throw new NotFoundError('Locomotive');
       await prisma.locomotive.update({ where: { id }, data: { deletedAt: new Date() } });
       return { data: { id, deleted: true } };
+    },
+  );
+
+  app.post(
+    '/locomotives/:id/systems',
+    {
+      preHandler: [authenticate, requireRole('ADMIN', 'MANAGER')],
+      schema: {
+        tags: ['assets'],
+        summary: 'Add a system node to a locomotive',
+        security: bearerAuth,
+        params: z2j(idParamsSchema),
+        body: z2j(systemNodeSchema),
+        response: { 201: dataResponse(z2j(entitySchema)), 404: errorResponse },
+      },
+    },
+    async (request, reply) => {
+      const { id } = request.params as { id: string };
+      const body = systemNodeSchema.parse(request.body);
+      const locomotive = await prisma.locomotive.findFirst({
+        where: { id, organizationId: orgId(request), deletedAt: null },
+      });
+      if (!locomotive) throw new NotFoundError('Locomotive');
+      const system = await prisma.systemNode.create({
+        data: { ...body, locomotiveId: id, organizationId: orgId(request) },
+      });
+      reply.status(201);
+      return { data: system };
+    },
+  );
+
+  app.post(
+    '/locomotives/:id/systems/:systemId/assemblies',
+    {
+      preHandler: [authenticate, requireRole('ADMIN', 'MANAGER')],
+      schema: {
+        tags: ['assets'],
+        summary: 'Add an assembly to a system node',
+        security: bearerAuth,
+        params: z2j(z.object({ id: z.string(), systemId: z.string() })),
+        body: z2j(assemblySchema),
+        response: { 201: dataResponse(z2j(entitySchema)), 404: errorResponse },
+      },
+    },
+    async (request, reply) => {
+      const { id, systemId } = request.params as { id: string; systemId: string };
+      const body = assemblySchema.parse(request.body);
+      const system = await prisma.systemNode.findFirst({
+        where: { id: systemId, organizationId: orgId(request), locomotiveId: id },
+      });
+      if (!system) throw new NotFoundError('SystemNode');
+      const assembly = await prisma.assembly.create({
+        data: { ...body, systemNodeId: systemId, organizationId: orgId(request) },
+      });
+      reply.status(201);
+      return { data: assembly };
     },
   );
 

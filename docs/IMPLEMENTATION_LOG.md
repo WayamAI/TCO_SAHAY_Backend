@@ -242,3 +242,60 @@ every commit.
   prisma schema, migration, service, routes+buildApp registration, openapi
   test update, routes integration test, this log entry, remaining doc
   updates) for a final total of 82+ on `feature/phase-8-simulation-engine`.
+
+## 2026-10-12 — Post-audit hardening (Phase 9 follow-up)
+
+Addressed four confirmed findings from the Phase 9 backend audit, as small
+atomic commits (see `git log`):
+
+- **`scenario.includeDowntime` wired into both engines.** Component already
+  carried `mttrHours`/`downtimeCostPerDay` (captured at creation, unused
+  since Phase 4). Added `(mttrHours / 24) * downtimeCostPerDay` per
+  maintenance event, billed to the customer only, applied in
+  `tco/engine.ts`, threaded through `tco/service.ts` and
+  `simulation/engine.ts`/`simulation/service.ts` (simulation reuses the same
+  `locomotiveTco()` call, so no duplicated logic). `laborRate`,
+  `discountRate`, `inflationEnabled`, `fuelCostPerLiter` remain
+  **intentionally** unapplied — see `TCO_ENGINE_SPECIFICATION.md`'s
+  field-application table for why each one would require inventing data the
+  domain model doesn't have (an hourly labor-hours field, a stored
+  inflation/discount rate to compound, or a fuel-consumption model).
+- **`SystemNode`/`Assembly` creation routes added.** `POST
+  /locomotives/:id/systems` and `POST
+  /locomotives/:id/systems/:systemId/assemblies` close the gap where a
+  locomotive's BOM tree could only be built by seeding the database
+  directly. Both verify organization ownership of every parent in the
+  chain and reject cross-tenant references with 404.
+- **Login/registration rate limiting added** via `@fastify/rate-limit`
+  (10 requests/minute per client on `/auth/login` and `/auth/register`,
+  registered `global: false` so no other route is throttled). Required a
+  small fix to `errorHandler.ts`: it previously flattened every
+  non-`AppError` exception to a generic 500, which silently turned the
+  plugin's 429 into a 500. It now passes through a trusted plugin's own
+  4xx `statusCode` and message instead.
+- **Multi-org login: left as `memberships[0]`, not changed.** Audited
+  every route that creates a `Membership` (`auth/service.ts` register,
+  `users/routes.ts` POST `/users`) — neither one, nor any other code path
+  in this repository, can ever attach a *second* membership to an existing
+  user. A multi-org user is a state the Prisma schema permits but that no
+  part of this application can currently produce. Building an
+  organization-selection login flow for a state nothing can create would
+  be inventing a requirement with no product spec behind it. This is
+  recorded here as a known, backward-compatible simplification, not
+  silently glossed over: if a future feature (e.g. inviting an existing
+  user into a second organization) starts creating multi-membership users,
+  `login`/`refresh` picking `memberships[0]` will need to become an
+  explicit organization-selection step at that point.
+
+**Validation results:** `tsc --noEmit` clean, `eslint .` clean, `vitest run`
+82/82 (up from 72/72 at the start of this session), `tsc -p tsconfig.json`
+(build) clean, `prisma validate` valid, `prisma migrate status` up to date.
+No schema or migration changes were needed — `includeDowntime` and the new
+routes only use fields and models that already existed.
+
+**Remaining from the audit, not addressed in this pass:** `organizations`
+and `fleets` modules still have no dedicated test file; the shared
+`tenant-isolation.test.ts` still only checks registration-time org-ID
+uniqueness rather than cross-org resource access for every module; no CI
+pipeline exists; the frontend (`locomotive_wabtec-main`) still has zero
+integration with this backend.

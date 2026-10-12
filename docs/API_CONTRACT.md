@@ -59,6 +59,8 @@ Errors: `INVALID_CREDENTIALS` (401), `EMAIL_TAKEN` (409), `TOKEN_EXPIRED` (401).
 | GET | `/locomotives/:id` | bearer | includes system/assembly/component tree |
 | PATCH | `/locomotives/:id` | bearer | ADMIN/MANAGER |
 | DELETE | `/locomotives/:id` | bearer | ADMIN |
+| POST | `/locomotives/:id/systems` | bearer | ADMIN/MANAGER — creates a SystemNode |
+| POST | `/locomotives/:id/systems/:systemId/assemblies` | bearer | ADMIN/MANAGER — creates an Assembly under that system |
 | GET | `/locomotives/:id/components` | bearer | flattened component list with dependency edges |
 | POST | `/locomotives/:id/components` | bearer | ADMIN/MANAGER |
 | PATCH | `/components/:id` | bearer | ADMIN/MANAGER |

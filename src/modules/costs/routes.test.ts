@@ -123,4 +123,54 @@ describe('cost domain', () => {
     });
     expect(all.json().meta.total).toBe(2);
   });
+
+  it('rejects cross-org maintenance schedule and cost record access with 404', async () => {
+    const app = await buildApp(config);
+    const { locomotiveId } = await setup(app);
+
+    const otherOrg = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: { organizationName: 'Other Org', email: 'admin@other.test', password: 'supersecret123' },
+    });
+    const otherToken = otherOrg.json().data.accessToken as string;
+
+    const scheduleRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/maintenance-schedules`,
+      headers: { authorization: `Bearer ${otherToken}` },
+      payload: {
+        name: 'Hijacked Schedule',
+        triggerMonths: 12,
+        rule: 'whichever-first',
+        laborHours: 8,
+        laborRatePerHour: 65,
+        partsEstimate: 1200,
+        type: 'PREVENTIVE',
+      },
+    });
+    expect(scheduleRes.statusCode).toBe(404);
+
+    const scheduleListRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/locomotives/${locomotiveId}/maintenance-schedules`,
+      headers: { authorization: `Bearer ${otherToken}` },
+    });
+    expect(scheduleListRes.statusCode).toBe(404);
+
+    const costCreateRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/cost-records`,
+      headers: { authorization: `Bearer ${otherToken}` },
+      payload: { year: 2024, category: 'FUEL', amount: 1 },
+    });
+    expect(costCreateRes.statusCode).toBe(404);
+
+    const costListRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/locomotives/${locomotiveId}/cost-records`,
+      headers: { authorization: `Bearer ${otherToken}` },
+    });
+    expect(costListRes.statusCode).toBe(404);
+  });
 });

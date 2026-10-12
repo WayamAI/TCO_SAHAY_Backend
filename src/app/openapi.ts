@@ -35,6 +35,7 @@ export async function registerOpenApi(app: FastifyInstance): Promise<void> {
         { name: 'costs' },
         { name: 'tco' },
         { name: 'scenarios' },
+        { name: 'simulation' },
       ],
     },
   });

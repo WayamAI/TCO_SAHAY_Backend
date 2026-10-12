@@ -74,7 +74,7 @@ any of this logic was ported from somewhere that runs it today.
 | `planningHorizonYears` | Yes, as a default | Used as `horizonYears` unless the caller's request body supplies an explicit one |
 | `laborRate` | **No** | The engine computes labor as `laborCostPct` of replacement cost (Component-level), not an hourly rate × hours — there's no hours figure at Component granularity to multiply `laborRate` against. Applying it would require inventing a labor-hours field with no frontend or domain source. Stored for future use (Part-level TCO, Phase 10, does have `laborHoursPerReplacement` and could use it) |
 | `inflationEnabled` | **No** | The engine has no inflation model at all yet (no compounding-by-year logic exists anywhere in `engine.ts`) |
-| `includeDowntime` | **No** | The engine has no downtime cost line item (that's `simulationEngine.ts`'s territory on the frontend, itself out of scope until Phase 8/9) |
+| `includeDowntime` | **Yes** | Adds `(mttrHours / 24) * downtimeCostPerDay` per maintenance event to that component's `totalCost`. Both fields already existed on `Component` (captured at creation, see `assets/routes.ts`) but were unused until this change. Downtime is always billed to the customer — it is an operational cost incurred regardless of who paid for the replacement part, so it never contributes to `warrantyCoveredCost`/`companyCost`. Defaults to 0 when a component has no `mttrHours`/`downtimeCostPerDay` recorded |
 | `discountRate` | **No** | Dead on the frontend too (never consumed by any frontend TCO math) — carried in the schema purely for data-shape parity, not calculated against |
 | `fuelCostPerLiter` | **No** | Same as above — dead on the frontend, no fuel cost line item in this engine |
 

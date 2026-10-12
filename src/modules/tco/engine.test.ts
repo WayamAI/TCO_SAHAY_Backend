@@ -84,4 +84,46 @@ describe('tco engine', () => {
     const events = maintenanceEvents(highMileageComponent, 5);
     expect(events[0].underWarranty).toBe(true);
   });
+
+  // Scenario.includeDowntime: Component already carries mttrHours and
+  // downtimeCostPerDay (captured at creation, see assets/routes.ts) but the
+  // engine ignored both until this test. Downtime cost per event is
+  // (mttrHours / 24) * downtimeCostPerDay, always billed to the customer
+  // (an outage is an operational cost regardless of who paid for the part).
+  describe('includeDowntime', () => {
+    const downtimeComponent = { ...component, mttrHours: 48, downtimeCostPerDay: 2000 };
+
+    it('is zero cost when the flag is omitted or false', () => {
+      const withoutFlag = componentTco(downtimeComponent, 20, { annualHours: 4500 });
+      const explicitFalse = componentTco(downtimeComponent, 20, { annualHours: 4500 }, 1, false);
+      expect(withoutFlag.downtimeCost).toBe(0);
+      expect(explicitFalse.downtimeCost).toBe(0);
+      expect(withoutFlag.totalCost).toBe(withoutFlag.maintenanceCost + withoutFlag.laborCost);
+    });
+
+    it('adds (mttrHours / 24) * downtimeCostPerDay per event when enabled', () => {
+      const result = componentTco(downtimeComponent, 20, { annualHours: 4500 }, 1, true);
+      // 4 events (years 5,10,15,20), each costing 48/24 * 2000 = 4000
+      expect(result.downtimeCost).toBe(4 * 4000);
+      expect(result.totalCost).toBe(result.maintenanceCost + result.laborCost + result.downtimeCost);
+    });
+
+    it('is always billed to the customer, never warranty-covered', () => {
+      const result = componentTco(downtimeComponent, 20, { annualHours: 4500 }, 1, true);
+      expect(result.customerCost).toBeGreaterThanOrEqual(result.downtimeCost);
+      // Only the year-5 event is under warranty (warrantyYears: 7); downtime
+      // cost must not appear in companyCost/warrantyCoveredCost.
+      expect(result.warrantyCoveredCost).toBe(11800);
+    });
+
+    it('defaults mttrHours/downtimeCostPerDay to 0 when absent, even with the flag on', () => {
+      const result = componentTco(component, 20, { annualHours: 4500 }, 1, true);
+      expect(result.downtimeCost).toBe(0);
+    });
+
+    it('locomotiveTco passes includeDowntime through to every component', () => {
+      const result = locomotiveTco([downtimeComponent], 20, { annualHours: 4500 }, 1, true);
+      expect(result.rows[0].downtimeCost).toBe(4 * 4000);
+    });
+  });
 });

@@ -23,6 +23,8 @@ export interface TcoComponentInput {
   laborCostPct: number;
   weibullBeta: number;
   weibullEta: number;
+  mttrHours?: number;
+  downtimeCostPerDay?: number;
 }
 
 export interface TcoEventInput {
@@ -34,8 +36,14 @@ export interface MaintenanceEvent {
   atYear: number;
   cost: number;
   laborCost: number;
+  downtimeCost: number;
   totalCost: number;
   underWarranty: boolean;
+}
+
+/** Scenario.includeDowntime: (mttrHours / 24) * downtimeCostPerDay per event. */
+export function downtimeCostFor(mttrHours: number, downtimeCostPerDay: number): number {
+  return (mttrHours / 24) * downtimeCostPerDay;
 }
 
 export function laborFor(baseCost: number, laborPct: number): number {
@@ -52,6 +60,7 @@ export function weibullFailureProbability(ageHours: number, beta: number, eta: n
 export function maintenanceEvents(
   component: TcoComponentInput,
   horizonYears: number,
+  includeDowntime = false,
 ): MaintenanceEvent[] {
   if (!isFinite(component.lifeYears) || component.lifeYears <= 0) return [];
 
@@ -63,12 +72,16 @@ export function maintenanceEvents(
 
     const cost = component.replacementCost;
     const laborCost = laborFor(cost, component.laborCostPct);
+    const downtimeCost = includeDowntime
+      ? downtimeCostFor(component.mttrHours ?? 0, component.downtimeCostPerDay ?? 0)
+      : 0;
     events.push({
       occurrence: n,
       atYear: +atYear.toFixed(2),
       cost,
       laborCost,
-      totalCost: cost + laborCost,
+      downtimeCost,
+      totalCost: cost + laborCost + downtimeCost,
       underWarranty: atYear <= component.warrantyYears,
     });
   }
@@ -82,6 +95,7 @@ export interface ComponentTco {
   eventCount: number;
   maintenanceCost: number;
   laborCost: number;
+  downtimeCost: number;
   totalCost: number;
   warrantyCoveredCost: number;
   customerCost: number;
@@ -95,19 +109,24 @@ export function componentTco(
   horizonYears: number,
   input: TcoEventInput,
   failureRateMultiplier = 1,
+  includeDowntime = false,
 ): ComponentTco {
-  const events = maintenanceEvents(component, horizonYears);
+  const events = maintenanceEvents(component, horizonYears, includeDowntime);
 
   let maintenanceCost = 0;
   let laborCost = 0;
+  let downtimeCost = 0;
   let warrantyCoveredCost = 0;
   for (const e of events) {
     maintenanceCost += e.cost;
     laborCost += e.laborCost;
-    if (e.underWarranty) warrantyCoveredCost += e.totalCost;
+    downtimeCost += e.downtimeCost;
+    // Downtime is an operational cost, not a parts/labor cost, so it is
+    // always billed to the customer - warranty never covers it.
+    if (e.underWarranty) warrantyCoveredCost += e.cost + e.laborCost;
   }
 
-  const totalCost = maintenanceCost + laborCost;
+  const totalCost = maintenanceCost + laborCost + downtimeCost;
   const ageHours = horizonYears * input.annualHours;
   const failureProbability =
     weibullFailureProbability(ageHours, component.weibullBeta, component.weibullEta) * failureRateMultiplier;
@@ -120,6 +139,7 @@ export function componentTco(
     eventCount: events.length,
     maintenanceCost,
     laborCost,
+    downtimeCost,
     totalCost,
     warrantyCoveredCost,
     customerCost: totalCost - warrantyCoveredCost,
@@ -133,6 +153,7 @@ export interface LocomotiveTco {
   rows: ComponentTco[];
   maintenanceCost: number;
   laborCost: number;
+  downtimeCost: number;
   totalCost: number;
   warrantyCoveredCost: number;
   customerTCO: number;
@@ -146,8 +167,9 @@ export function locomotiveTco(
   horizonYears: number,
   input: TcoEventInput,
   failureRateMultiplier = 1,
+  includeDowntime = false,
 ): LocomotiveTco {
-  const rows = components.map((c) => componentTco(c, horizonYears, input, failureRateMultiplier));
+  const rows = components.map((c) => componentTco(c, horizonYears, input, failureRateMultiplier, includeDowntime));
   const sum = (pick: (r: ComponentTco) => number) => rows.reduce((s, r) => s + pick(r), 0);
 
   const totalCost = sum((r) => r.totalCost);
@@ -158,6 +180,7 @@ export function locomotiveTco(
     rows,
     maintenanceCost: sum((r) => r.maintenanceCost),
     laborCost: sum((r) => r.laborCost),
+    downtimeCost: sum((r) => r.downtimeCost),
     totalCost,
     warrantyCoveredCost,
     customerTCO: totalCost - warrantyCoveredCost,

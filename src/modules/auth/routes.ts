@@ -31,6 +31,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/auth/register',
     {
+      preHandler: app.rateLimit({ max: 10, timeWindow: '1 minute' }),
       schema: {
         tags: ['auth'],
         summary: 'Register a new organization and its first ADMIN user',
@@ -49,6 +50,7 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/auth/login',
     {
+      preHandler: app.rateLimit({ max: 10, timeWindow: '1 minute' }),
       schema: {
         tags: ['auth'],
         summary: 'Log in with email and password',

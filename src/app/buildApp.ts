@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import cors from '@fastify/cors';
+import rateLimit from '@fastify/rate-limit';
 import { loadConfig, type Config } from './config.js';
 import { errorHandler } from './errorHandler.js';
 import { healthRoutes } from '../modules/health/routes.js';
@@ -25,6 +26,12 @@ export async function buildApp(config: Config = loadConfig()): Promise<FastifyIn
   app.decorate('config', config);
 
   await app.register(cors, { origin: config.CORS_ORIGINS.split(',') });
+
+  // global: false - only routes that opt in via `config: { rateLimit }` are
+  // throttled (currently /auth/login and /auth/register). `trustProxy` is
+  // never set on the Fastify instance above, so this always keys off the
+  // actual socket address, never a spoofable X-Forwarded-For header.
+  await app.register(rateLimit, { global: false });
 
   app.setErrorHandler(errorHandler);
 

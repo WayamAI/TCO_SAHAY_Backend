@@ -215,6 +215,51 @@ describe('tco runs', () => {
     expect(scenario.totalCost).toBeGreaterThan(baseline.totalCost);
   });
 
+  it('scenario.includeDowntime adds downtime cost to the persisted TCO run', async () => {
+    const app = await buildApp(config);
+    const { token, locomotiveId } = await setupLocomotiveWithComponent(app);
+
+    // Component: mttrHours 12, downtimeCostPerDay 5000 -> downtime per event
+    // = (12 / 24) * 5000 = 2500. 4 events over 20y (lifeYears 5) -> 10000 total.
+    const scenarioRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/scenarios',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: 'Downtime Enabled',
+        planningHorizonYears: 20,
+        discountRate: 5,
+        laborRate: 100,
+        maintenanceIntervalMultiplier: 1,
+        failureRateMultiplier: 1,
+        warrantyExtendedYears: 0,
+        fuelCostPerLiter: 1.5,
+        inflationEnabled: false,
+        includeDowntime: true,
+      },
+    });
+    const scenarioId = scenarioRes.json().data.id;
+
+    const baselineRun = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tco/runs',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { locomotiveId, horizonYears: 20 },
+    });
+    const baseline = baselineRun.json().data.outputs;
+    expect(baseline.downtimeCost).toBe(0);
+
+    const scenarioRun = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tco/runs',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { locomotiveId, scenarioId },
+    });
+    const withDowntime = scenarioRun.json().data.outputs;
+    expect(withDowntime.downtimeCost).toBe(4 * 2500);
+    expect(withDowntime.totalCost).toBe(baseline.totalCost + withDowntime.downtimeCost);
+  });
+
   it('rejects a scenarioId from another organization with 404', async () => {
     const app = await buildApp(config);
     const { token, locomotiveId } = await setupLocomotiveWithComponent(app);

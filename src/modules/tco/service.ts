@@ -38,6 +38,7 @@ export async function runTco(prisma: PrismaClient, input: RunTcoInput) {
   const maintenanceIntervalMultiplier = scenario?.maintenanceIntervalMultiplier ?? 1;
   const warrantyExtendedYears = scenario?.warrantyExtendedYears ?? 0;
   const failureRateMultiplier = scenario?.failureRateMultiplier ?? 1;
+  const includeDowntime = scenario?.includeDowntime ?? false;
   const annualHours = scenario?.operatingProfile?.annualHours ?? locomotive.annualHours;
 
   const components: TcoComponentInput[] = locomotive.systems.flatMap((system) =>
@@ -53,11 +54,13 @@ export async function runTco(prisma: PrismaClient, input: RunTcoInput) {
           laborCostPct: c.laborCostPct,
           weibullBeta: c.weibullBeta,
           weibullEta: c.weibullEta,
+          mttrHours: c.mttrHours,
+          downtimeCostPerDay: c.downtimeCostPerDay,
         })),
     ),
   );
 
-  const outputs = locomotiveTco(components, horizonYears, { annualHours }, failureRateMultiplier);
+  const outputs = locomotiveTco(components, horizonYears, { annualHours }, failureRateMultiplier, includeDowntime);
 
   const run = await prisma.tcoRun.create({
     data: {
@@ -73,6 +76,7 @@ export async function runTco(prisma: PrismaClient, input: RunTcoInput) {
         maintenanceIntervalMultiplier,
         warrantyExtendedYears,
         failureRateMultiplier,
+        includeDowntime,
       },
       outputs: outputs as object,
       createdByUserId: input.userId,

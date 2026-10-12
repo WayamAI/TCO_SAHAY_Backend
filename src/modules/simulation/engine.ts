@@ -24,6 +24,7 @@ export interface SimulationInput {
   baseFailureMultiplier: number;
   iterations: number;
   seed: string;
+  includeDowntime?: boolean;
 }
 
 export interface SimulationResult {
@@ -79,7 +80,13 @@ export function runSimulation(input: SimulationInput): SimulationResult {
       replacementCost: c.replacementCost * costMultiplier,
     }));
 
-    const trial = locomotiveTco(perturbedComponents, input.horizonYears, input.event, failureRateMultiplier);
+    const trial = locomotiveTco(
+      perturbedComponents,
+      input.horizonYears,
+      input.event,
+      failureRateMultiplier,
+      input.includeDowntime ?? false,
+    );
     assertFiniteNonNegative(trial.totalCost, 'trial totalCost');
     totalCosts.push(trial.totalCost);
   }

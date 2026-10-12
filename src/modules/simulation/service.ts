@@ -45,6 +45,7 @@ export async function runLocomotiveSimulation(prisma: PrismaClient, input: RunSi
   const maintenanceIntervalMultiplier = scenario?.maintenanceIntervalMultiplier ?? 1;
   const warrantyExtendedYears = scenario?.warrantyExtendedYears ?? 0;
   const baseFailureMultiplier = scenario?.failureRateMultiplier ?? 1;
+  const includeDowntime = scenario?.includeDowntime ?? false;
   const annualHours = scenario?.operatingProfile?.annualHours ?? locomotive.annualHours;
 
   const components: TcoComponentInput[] = locomotive.systems.flatMap((system) =>
@@ -60,6 +61,8 @@ export async function runLocomotiveSimulation(prisma: PrismaClient, input: RunSi
           laborCostPct: c.laborCostPct,
           weibullBeta: c.weibullBeta,
           weibullEta: c.weibullEta,
+          mttrHours: c.mttrHours,
+          downtimeCostPerDay: c.downtimeCostPerDay,
         })),
     ),
   );
@@ -77,6 +80,7 @@ export async function runLocomotiveSimulation(prisma: PrismaClient, input: RunSi
     baseFailureMultiplier,
     iterations,
     seed,
+    includeDowntime,
   });
 
   const run = await prisma.simulationRun.create({
@@ -92,6 +96,7 @@ export async function runLocomotiveSimulation(prisma: PrismaClient, input: RunSi
         annualHours,
         componentCount: components.length,
         baseFailureMultiplier,
+        includeDowntime,
         scenarioId: scenario?.id ?? null,
       },
       summary: result.totalCost.summary as object,

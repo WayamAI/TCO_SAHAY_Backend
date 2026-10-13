@@ -260,6 +260,56 @@ describe('tco runs', () => {
     expect(withDowntime.totalCost).toBe(baseline.totalCost + withDowntime.downtimeCost);
   });
 
+  it('a PATCH to an existing scenario changes the result of a subsequent TCO run using it', async () => {
+    const app = await buildApp(config);
+    const { token, locomotiveId } = await setupLocomotiveWithComponent(app);
+
+    const scenarioRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/scenarios',
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: 'Starts Without Downtime',
+        planningHorizonYears: 20,
+        discountRate: 5,
+        laborRate: 100,
+        maintenanceIntervalMultiplier: 1,
+        failureRateMultiplier: 1,
+        warrantyExtendedYears: 0,
+        fuelCostPerLiter: 1.5,
+        inflationEnabled: false,
+        includeDowntime: false,
+      },
+    });
+    const scenarioId = scenarioRes.json().data.id;
+
+    const beforeUpdateRun = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tco/runs',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { locomotiveId, scenarioId },
+    });
+    expect(beforeUpdateRun.json().data.outputs.downtimeCost).toBe(0);
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/scenarios/${scenarioId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { includeDowntime: true },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    expect(patchRes.json().data.includeDowntime).toBe(true);
+
+    const afterUpdateRun = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tco/runs',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { locomotiveId, scenarioId },
+    });
+    // Same scenario id, same locomotive -- only the PATCH changed in between.
+    expect(afterUpdateRun.json().data.outputs.downtimeCost).toBe(4 * 2500);
+  });
+
   it('rejects a scenarioId from another organization with 404', async () => {
     const app = await buildApp(config);
     const { token, locomotiveId } = await setupLocomotiveWithComponent(app);

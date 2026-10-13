@@ -299,3 +299,39 @@ and `fleets` modules still have no dedicated test file; the shared
 uniqueness rather than cross-org resource access for every module; no CI
 pipeline exists; the frontend (`locomotive_wabtec-main`) still has zero
 integration with this backend.
+
+## 2026-10-13 — Verification pass and doc-drift fix
+
+Re-ran the full baseline (`eslint .`, `tsc --noEmit`, `tsc -p tsconfig.json`
+build, `prisma validate`, `prisma migrate status`, `vitest run`) against a
+local Postgres instance. All green: lint/typecheck/build clean, schema
+valid, 6/6 migrations applied with no drift, **91/91 tests passing**. No
+code regressions found since the last recorded state.
+
+- **Fixed a factual error in `ENVIRONMENT_CONFIGURATION.md`**: it claimed
+  refresh tokens are "signed with `JWT_REFRESH_SECRET`". Reading
+  `auth/tokens.ts` confirms refresh tokens are opaque
+  `crypto.randomBytes(32)` hex strings, stored only as a SHA-256 hash —
+  never a JWT, and `JWT_REFRESH_SECRET` is validated at startup but used by
+  no code path. `FRONTEND_INTEGRATION_GUIDE.md` already had this right;
+  `ENVIRONMENT_CONFIGURATION.md` is now corrected to match.
+- **Confirmed `cost-records` append-only (no PATCH/DELETE) is a documented
+  design choice**, not a gap (`API_CONTRACT.md` line 82: "append-only, no
+  PATCH/DELETE — corrections are new rows").
+- **Identified, but deliberately did not build, a real asymmetry in the
+  asset hierarchy**: `Locomotive` and `Component` have full CRUD
+  (list/create/read/update/delete), but `SystemNode` and `Assembly` only
+  have `POST` (create) — no list, no individual read, no update, no
+  delete. Neither `API_CONTRACT.md`'s "Explicitly out of scope" section
+  nor `FRONTEND_BACKEND_COMPATIBILITY.md` /
+  `FRONTEND_DOMAIN_INVENTORY.md` mention this as an intentional limit or a
+  confirmed frontend requirement, and neither `SystemNode` nor `Assembly`
+  has a `deletedAt` soft-delete column in the Prisma schema (unlike
+  `Locomotive`/`Component`), so a delete endpoint would need a schema
+  migration, not just a route. Building four new endpoints (and a schema
+  change) on a guess about frontend need would be inventing scope. **Open
+  question for the frontend task:** does the UI need to rename/re-criticality
+  a system node, move/rename an assembly, or delete either without
+  recreating the whole locomotive? If yes, the next backend pass should
+  add `GET/PATCH/DELETE /locomotives/:id/systems/:systemId` and the
+  equivalent for assemblies, plus a `deletedAt` column on both models.

@@ -20,7 +20,7 @@ All 6 are already documented with placeholder values in the repo's checked-in `.
 ## Auth middleware
 
 - JWT bearer tokens, verified via `buildAuthenticate(app.config.JWT_ACCESS_SECRET)` (`src/shared/authenticate.ts`), used as `preHandler` on every protected route.
-- Refresh tokens handled separately in `src/modules/auth/routes.ts` (`POST /auth/refresh`), signed with `JWT_REFRESH_SECRET` — access and refresh secrets are intentionally distinct.
+- Refresh tokens handled separately in `src/modules/auth/routes.ts` (`POST /auth/refresh`). They are **not** JWTs: `src/modules/auth/tokens.ts` generates an opaque `crypto.randomBytes(32)` hex string, stores only its SHA-256 hash, and verifies by hash lookup. `JWT_REFRESH_SECRET` is validated at startup but currently unused by any code path — it is reserved for a future switch to signed refresh tokens (see `FRONTEND_INTEGRATION_GUIDE.md`).
 - RBAC via `requireRole('ADMIN' | 'MANAGER' | 'VIEWER')` preHandler, stacked after `authenticate` on role-gated routes (see `API_CONTRACT_AUDIT.md` for the per-route matrix).
 
 ## CORS

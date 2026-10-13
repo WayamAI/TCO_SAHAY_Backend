@@ -87,6 +87,40 @@ describe('fleets', () => {
     expect(archiveRes.json().data.archived).toBe(true);
   });
 
+  it('un-archives a fleet via PATCH { archived: false }', async () => {
+    const app = await buildApp(config);
+    const token = await registerAndGetToken(app, 'fleet-unarchive');
+
+    const createRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/fleets',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'Fleet To Unarchive' },
+    });
+    const fleetId = createRes.json().data.id;
+
+    await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/fleets/${fleetId}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    const unarchiveRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/fleets/${fleetId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { archived: false },
+    });
+    expect(unarchiveRes.json().data.archivedAt).toBeNull();
+
+    const getRes = await app.inject({
+      method: 'GET',
+      url: `/api/v1/fleets/${fleetId}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(getRes.json().data.archivedAt).toBeNull();
+  });
+
   it('rejects cross-organization read, update, and delete with 404', async () => {
     const app = await buildApp(config);
     const tokenA = await registerAndGetToken(app, 'owner');

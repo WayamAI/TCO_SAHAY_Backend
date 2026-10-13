@@ -236,3 +236,93 @@ describe('system/assembly hierarchy', () => {
     expect(crossOrgAssembly.statusCode).toBe(404);
   });
 });
+
+describe('component RBAC', () => {
+  it('rejects a VIEWER updating or deleting a component with 403, but ADMIN/MANAGER can', async () => {
+    const app = await buildApp(config);
+    const adminToken = await registerAndGetToken(app, 'component-rbac');
+    const locomotiveId = await setupLocomotive(app, adminToken);
+
+    const systemRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'Propulsion', icon: 'engine', criticality: 'High' },
+    });
+    const systemId = systemRes.json().data.id;
+    const assemblyRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}/assemblies`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'Traction' },
+    });
+    const assemblyId = assemblyRes.json().data.id;
+    const componentRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/components`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        assemblyId,
+        name: 'Traction Motor',
+        purchaseCost: 10000,
+        replacementCost: 10000,
+        lifeYears: 5,
+        mtbfHours: 40000,
+        weibullBeta: 2,
+        weibullEta: 50000,
+        mttrHours: 12,
+        warrantyYears: 7,
+        laborCostPct: 18,
+        failureImpact: 'High',
+        category: 'Propulsion',
+        downtimeCostPerDay: 5000,
+      },
+    });
+    const componentId = componentRes.json().data.id;
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { email: 'viewer@component-rbac.test', password: 'viewerpass123', role: 'VIEWER' },
+    });
+    const viewerLogin = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: 'viewer@component-rbac.test', password: 'viewerpass123' },
+    });
+    const viewerToken = viewerLogin.json().data.accessToken;
+
+    const viewerUpdate = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/components/${componentId}`,
+      headers: { authorization: `Bearer ${viewerToken}` },
+      payload: { name: 'Should Not Apply' },
+    });
+    expect(viewerUpdate.statusCode).toBe(403);
+
+    const viewerDelete = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/components/${componentId}`,
+      headers: { authorization: `Bearer ${viewerToken}` },
+    });
+    expect(viewerDelete.statusCode).toBe(403);
+
+    const adminUpdate = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/components/${componentId}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'Renamed Motor' },
+    });
+    expect(adminUpdate.statusCode).toBe(200);
+    expect(adminUpdate.json().data.name).toBe('Renamed Motor');
+
+    const adminDelete = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/components/${componentId}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    expect(adminDelete.statusCode).toBe(200);
+    expect(adminDelete.json().data.deleted).toBe(true);
+  });
+});

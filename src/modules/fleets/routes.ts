@@ -106,7 +106,10 @@ export async function fleetRoutes(app: FastifyInstance): Promise<void> {
       if (!existing) throw new NotFoundError('Fleet');
       const fleet = await prisma.fleet.update({
         where: { id: fleetId },
-        data: { name: body.name, archivedAt: body.archived ? new Date() : undefined },
+        data: {
+          name: body.name,
+          archivedAt: body.archived === undefined ? undefined : body.archived ? new Date() : null,
+        },
       });
       return { data: fleet };
     },

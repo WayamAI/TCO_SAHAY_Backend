@@ -369,3 +369,27 @@ All test data created during this verification (4 users, 4 orgs, and
 their cascading fleet/locomotive/system/assembly/component rows) was
 deleted afterward and the shared local `tco_backend` database was
 confirmed back at its original 2-seed-user baseline.
+
+**Also live-verified in the same session**, same method (live HTTP against
+a running server, test data deleted afterward, baseline restored):
+
+- **`POST /tco/runs` persists a real calculation**, not a stub: ran it
+  twice on the same locomotive, once with no scenario
+  (`inputs.includeDowntime: false`, `events[0].downtimeCost: 0`) and once
+  with a scenario created via `POST /scenarios` with `includeDowntime:
+  true` (`inputs.includeDowntime: true`, `events[0].downtimeCost: 2500`).
+  The result demonstrably changes with the scenario, confirming the engine
+  is authoritative and not pass-through.
+- **Scenario creation requires every field with no server-side defaults**
+  (`planningHorizonYears`, `discountRate`, `laborRate`,
+  `maintenanceIntervalMultiplier`, `failureRateMultiplier`,
+  `warrantyExtendedYears`, `fuelCostPerLiter`, `inflationEnabled`,
+  `includeDowntime` are all required by `scenarioSchema` in
+  `scenarios/routes.ts`) — worth flagging to the frontend task: a
+  scenario-creation form must collect all nine fields, not just the ones
+  that currently affect the result.
+- **`POST /simulation-runs` → `GET /simulation-runs/:id` →
+  `GET /locomotives/:id/simulation-runs`** all verified live with
+  `iterations: 500` and a fixed `seed`: the run persisted a real
+  `summary`/`percentiles` distribution and both retrieval routes returned
+  `200` with the persisted record.

@@ -335,3 +335,37 @@ code regressions found since the last recorded state.
   recreating the whole locomotive? If yes, the next backend pass should
   add `GET/PATCH/DELETE /locomotives/:id/systems/:systemId` and the
   equivalent for assemblies, plus a `deletedAt` column on both models.
+
+## 2026-10-13 — Live contract verification for frontend asset-hierarchy integration
+
+The frontend integration session (`locomotive_wabtec-main`, branch
+`design-system-retrofit`) began wiring its BOM and Fleet Explorer screens to
+real backend data. Rather than re-reading code, this session proved the
+contract live: started `npm run dev`, registered a real user via
+`POST /auth/register`, and walked the full chain — create fleet → create
+locomotive → `POST .../systems` → `POST .../systems/:id/assemblies` →
+`POST .../components` → `GET /locomotives/:id` — against a live HTTP
+server and the local `tco_backend` Postgres instance.
+
+**Result: the existing `GET /locomotives/:id` endpoint already returns
+exactly the nested `{ ...locomotive, systems: [{ ...system, assemblies:
+[{ ...assembly, components: [...] }] }] }` shape the frontend's new
+`BackendLocomotiveDetail` type expects**, field-for-field (verified
+`currentHealthScore`, `availabilityPct`, `locomotiveId`, `systemNodeId`,
+`assemblyId`, and every `Component` field match with no renaming needed).
+Cross-organization access to another org's locomotive was also verified
+live: a second registered user received `404`, not the first org's data.
+
+**Conclusion: the previously-flagged asset-hierarchy gap required no
+backend change for read access.** The frontend's own commits
+(`66b424c`, `2da86dd`, `6e851fa`) confirm it — they consume the single
+nested detail call rather than requesting separate per-level list
+endpoints, and use the existing `POST/PATCH/DELETE /components/:id`
+routes for component mutation. The open question about
+`SystemNode`/`Assembly` rename/delete (previous entry) remains open only
+for *mutating* those two levels, not for reading them.
+
+All test data created during this verification (4 users, 4 orgs, and
+their cascading fleet/locomotive/system/assembly/component rows) was
+deleted afterward and the shared local `tco_backend` database was
+confirmed back at its original 2-seed-user baseline.

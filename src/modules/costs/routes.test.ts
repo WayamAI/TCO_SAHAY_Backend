@@ -174,4 +174,80 @@ describe('cost domain', () => {
     });
     expect(costListRes.statusCode).toBe(404);
   });
+
+  it('maintenance schedules support update and hard delete; cost records are append-only (no mutation routes exist)', async () => {
+    const app = await buildApp(config);
+    const { token, locomotiveId } = await setup(app);
+
+    const scheduleRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/maintenance-schedules`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        name: 'Annual Inspection',
+        triggerMonths: 12,
+        rule: 'whichever-first',
+        laborHours: 8,
+        laborRatePerHour: 65,
+        partsEstimate: 1200,
+        type: 'PREVENTIVE',
+      },
+    });
+    const scheduleId = scheduleRes.json().data.id as string;
+
+    const updateRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/maintenance-schedules/${scheduleId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { laborHours: 10, partsEstimate: 1500 },
+    });
+    expect(updateRes.statusCode).toBe(200);
+    expect(updateRes.json().data.laborHours).toBe(10);
+    expect(updateRes.json().data.partsEstimate).toBe(1500);
+
+    const deleteRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/maintenance-schedules/${scheduleId}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(deleteRes.statusCode).toBe(200);
+    expect(deleteRes.json().data.deleted).toBe(true);
+
+    const afterDelete = await prisma.maintenanceSchedule.findUnique({ where: { id: scheduleId } });
+    expect(afterDelete).toBeNull(); // hard delete, not soft
+
+    const deleteAgainRes = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/maintenance-schedules/${scheduleId}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(deleteAgainRes.statusCode).toBe(404);
+
+    const costRecordRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/cost-records`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { year: 2024, category: 'MAINTENANCE', amount: 15000 },
+    });
+    const costRecordId = costRecordRes.json().data.id as string;
+
+    // No PATCH/DELETE route exists for cost records - corrections are new rows, not edits.
+    const patchAttempt = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/cost-records/${costRecordId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { amount: 1 },
+    });
+    expect(patchAttempt.statusCode).toBe(404);
+
+    const deleteAttempt = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/cost-records/${costRecordId}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(deleteAttempt.statusCode).toBe(404);
+
+    const stillThere = await prisma.costRecord.findUnique({ where: { id: costRecordId } });
+    expect(stillThere).not.toBeNull();
+  });
 });

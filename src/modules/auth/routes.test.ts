@@ -66,3 +66,79 @@ describe('auth rate limiting', () => {
     expect(statusCodes).toContain(429);
   });
 });
+
+describe('auth HTTP lifecycle', () => {
+  it('registers, logs in, refreshes, and logs out over real HTTP requests', async () => {
+    const app = await buildApp(config);
+
+    const registerRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: { organizationName: 'Lifecycle Rail', email: 'lifecycle@acme.test', password: 'supersecret123' },
+    });
+    expect(registerRes.statusCode).toBe(201);
+    const registerBody = registerRes.json();
+    expect(registerBody.data.accessToken).toBeTypeOf('string');
+    expect(registerBody.data.refreshToken).toBeTypeOf('string');
+    expect(registerBody.data.user.email).toBe('lifecycle@acme.test');
+    expect(registerBody.data.user.role).toBe('ADMIN');
+
+    const duplicateRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/register',
+      payload: { organizationName: 'Another Org', email: 'lifecycle@acme.test', password: 'supersecret123' },
+    });
+    expect(duplicateRes.statusCode).toBe(409);
+
+    const loginRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: 'lifecycle@acme.test', password: 'supersecret123' },
+    });
+    expect(loginRes.statusCode).toBe(200);
+    const loginBody = loginRes.json();
+    expect(loginBody.data.accessToken).toBeTypeOf('string');
+
+    const badLoginRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: 'lifecycle@acme.test', password: 'wrong-password' },
+    });
+    expect(badLoginRes.statusCode).toBe(401);
+
+    const refreshRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/refresh',
+      payload: { refreshToken: loginBody.data.refreshToken },
+    });
+    expect(refreshRes.statusCode).toBe(200);
+    const refreshBody = refreshRes.json();
+    expect(refreshBody.data.accessToken).toBeTypeOf('string');
+    expect(refreshBody.data.refreshToken).toBeTypeOf('string');
+
+    const logoutRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/logout',
+      payload: { refreshToken: refreshBody.data.refreshToken },
+    });
+    expect(logoutRes.statusCode).toBe(200);
+    expect(logoutRes.json().data.loggedOut).toBe(true);
+
+    const reuseRefreshRes = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/refresh',
+      payload: { refreshToken: refreshBody.data.refreshToken },
+    });
+    expect(reuseRefreshRes.statusCode).toBe(401);
+  });
+
+  it('rejects a refresh with an invalid or already-rotated token with 401', async () => {
+    const app = await buildApp(config);
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/refresh',
+      payload: { refreshToken: 'not-a-real-token' },
+    });
+    expect(res.statusCode).toBe(401);
+  });
+});

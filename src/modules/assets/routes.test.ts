@@ -326,4 +326,135 @@ describe('component RBAC', () => {
     expect(adminDelete.statusCode).toBe(200);
     expect(adminDelete.json().data.deleted).toBe(true);
   });
+
+  it('MANAGER can update a component but is forbidden from deleting it (ADMIN-only)', async () => {
+    const app = await buildApp(config);
+    const adminToken = await registerAndGetToken(app, 'component-manager-rbac');
+    const locomotiveId = await setupLocomotive(app, adminToken);
+
+    const systemRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'Propulsion', icon: 'engine', criticality: 'High' },
+    });
+    const systemId = systemRes.json().data.id;
+    const assemblyRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}/assemblies`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { name: 'Traction' },
+    });
+    const assemblyId = assemblyRes.json().data.id;
+    const componentRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/components`,
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: {
+        assemblyId,
+        name: 'Traction Motor',
+        purchaseCost: 10000,
+        replacementCost: 10000,
+        lifeYears: 5,
+        mtbfHours: 40000,
+        weibullBeta: 2,
+        weibullEta: 50000,
+        mttrHours: 12,
+        warrantyYears: 7,
+        laborCostPct: 18,
+        failureImpact: 'High',
+        category: 'Propulsion',
+        downtimeCostPerDay: 5000,
+      },
+    });
+    const componentId = componentRes.json().data.id;
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+      payload: { email: 'manager@component-manager-rbac.test', password: 'managerpass123', role: 'MANAGER' },
+    });
+    const managerLogin = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: 'manager@component-manager-rbac.test', password: 'managerpass123' },
+    });
+    const managerToken = managerLogin.json().data.accessToken;
+
+    const managerUpdate = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/components/${componentId}`,
+      headers: { authorization: `Bearer ${managerToken}` },
+      payload: { name: 'Manager Renamed Motor' },
+    });
+    expect(managerUpdate.statusCode).toBe(200);
+    expect(managerUpdate.json().data.name).toBe('Manager Renamed Motor');
+
+    const managerDelete = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/components/${componentId}`,
+      headers: { authorization: `Bearer ${managerToken}` },
+    });
+    expect(managerDelete.statusCode).toBe(403);
+  });
+
+  it('rejects updating or deleting another organization’s component with 404', async () => {
+    const app = await buildApp(config);
+    const tokenA = await registerAndGetToken(app, 'component-cross-org-owner');
+    const tokenB = await registerAndGetToken(app, 'component-cross-org-intruder');
+    const locomotiveId = await setupLocomotive(app, tokenA);
+
+    const systemRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { name: 'Propulsion', icon: 'engine', criticality: 'High' },
+    });
+    const systemId = systemRes.json().data.id;
+    const assemblyRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}/assemblies`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { name: 'Traction' },
+    });
+    const assemblyId = assemblyRes.json().data.id;
+    const componentRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/components`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        assemblyId,
+        name: 'Traction Motor',
+        purchaseCost: 10000,
+        replacementCost: 10000,
+        lifeYears: 5,
+        mtbfHours: 40000,
+        weibullBeta: 2,
+        weibullEta: 50000,
+        mttrHours: 12,
+        warrantyYears: 7,
+        laborCostPct: 18,
+        failureImpact: 'High',
+        category: 'Propulsion',
+        downtimeCostPerDay: 5000,
+      },
+    });
+    const componentId = componentRes.json().data.id;
+
+    const crossOrgUpdate = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/components/${componentId}`,
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { name: 'Hijacked Rename' },
+    });
+    expect(crossOrgUpdate.statusCode).toBe(404);
+
+    const crossOrgDelete = await app.inject({
+      method: 'DELETE',
+      url: `/api/v1/components/${componentId}`,
+      headers: { authorization: `Bearer ${tokenB}` },
+    });
+    expect(crossOrgDelete.statusCode).toBe(404);
+  });
 });

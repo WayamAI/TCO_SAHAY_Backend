@@ -274,4 +274,30 @@ describe('simulation runs', () => {
     });
     expect(res.statusCode).toBe(404);
   });
+
+  it('allows a VIEWER to trigger a simulation run (documented asymmetry - no requireRole gate on this write, unlike every other mutating endpoint)', async () => {
+    const app = await buildApp(config);
+    const { token, locomotiveId } = await setupLocomotiveWithComponent(app);
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/users',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { email: 'viewer@sim.test', password: 'viewerpass123', role: 'VIEWER' },
+    });
+    const viewerLogin = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: 'viewer@sim.test', password: 'viewerpass123' },
+    });
+    const viewerToken = viewerLogin.json().data.accessToken;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/simulation-runs',
+      headers: { authorization: `Bearer ${viewerToken}` },
+      payload: { locomotiveId, horizonYears: 20, iterations: 100 },
+    });
+    expect(res.statusCode).toBe(201);
+  });
 });

@@ -348,4 +348,30 @@ describe('tco runs', () => {
     });
     expect(res.statusCode).toBe(404);
   });
+
+  it('allows a VIEWER to trigger a TCO run (documented asymmetry - no requireRole gate on this write, unlike every other mutating endpoint)', async () => {
+    const app = await buildApp(config);
+    const { token, locomotiveId } = await setupLocomotiveWithComponent(app);
+
+    await app.inject({
+      method: 'POST',
+      url: '/api/v1/users',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { email: 'viewer@acme.test', password: 'viewerpass123', role: 'VIEWER' },
+    });
+    const viewerLogin = await app.inject({
+      method: 'POST',
+      url: '/api/v1/auth/login',
+      payload: { email: 'viewer@acme.test', password: 'viewerpass123' },
+    });
+    const viewerToken = viewerLogin.json().data.accessToken;
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/v1/tco/runs',
+      headers: { authorization: `Bearer ${viewerToken}` },
+      payload: { locomotiveId, horizonYears: 20 },
+    });
+    expect(res.statusCode).toBe(201);
+  });
 });

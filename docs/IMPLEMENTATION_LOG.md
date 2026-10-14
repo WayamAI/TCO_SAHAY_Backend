@@ -393,3 +393,33 @@ a running server, test data deleted afterward, baseline restored):
   `iterations: 500` and a fixed `seed`: the run persisted a real
   `summary`/`percentiles` distribution and both retrieval routes returned
   `200` with the persisted record.
+
+## 2026-10-13 — Added CI; discovered the test suite was not self-contained
+
+Added `.github/workflows/ci.yml` (GitHub Actions, triggered on push to
+`main`/`feature/**` and on pull requests): a `postgres:16` service
+container, then `pnpm install --frozen-lockfile` → `prisma generate` →
+`lint` → `typecheck` → `prisma validate` → `prisma migrate deploy` →
+`build` → `test`, all against that fresh container database.
+
+**Before finalizing it, proved the sequence actually works** by running
+the exact same commands locally against a brand-new `tco_backend_ci_sim`
+database (not the long-lived local dev DB), rather than trusting the YAML
+on faith. First attempt (migrate deploy → build → test, no seed step)
+**failed 17/93 tests** — e.g. `fleets > lists global and org-custom
+operating profiles, scoped to the caller` asserted `data.length >
+0` and got `0`. Root cause: several tests call `GET /operating-profiles`
+and assume the 8 global profiles from `src/db/seed.ts` already exist.
+That was always true against this machine's dev database (seeded once,
+long ago) but is **not** true for a freshly migrated database — the test
+suite silently depended on out-of-band seed state and had never been run
+against a truly clean database before. Added a `pnpm prisma:seed` step
+(the seed script is an idempotent `upsert`, safe to run every CI
+invocation) between `migrate deploy` and `build`; re-ran the full
+simulation and got 93/93. The simulation database was dropped afterward.
+
+This means the 93-test baseline reported in every prior session on this
+machine was real, but was never actually proven portable to a fresh
+environment until this pass. Flagging as a reliability note, not fixing
+the tests themselves: the tests are not wrong, they just have an implicit
+fixture dependency that only a from-scratch CI run exposes.

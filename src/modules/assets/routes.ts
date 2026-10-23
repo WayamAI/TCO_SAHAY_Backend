@@ -331,6 +331,12 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
         where: { id, organizationId: orgId(request), deletedAt: null },
       });
       if (!existing) throw new NotFoundError('Component');
+      if (body.assemblyId !== undefined) {
+        const assembly = await prisma.assembly.findFirst({
+          where: { id: body.assemblyId, organizationId: orgId(request) },
+        });
+        if (!assembly) throw new NotFoundError('Assembly');
+      }
       const component = await prisma.component.update({ where: { id }, data: body });
       return { data: component };
     },

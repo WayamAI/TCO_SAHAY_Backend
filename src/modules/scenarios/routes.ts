@@ -13,13 +13,21 @@ import { bearerAuth, dataResponse, errorResponse } from '../../shared/openapiEnv
 const scenarioSchema = z.object({
   name: z.string().min(1),
   planningHorizonYears: z.number().int().positive().max(100),
-  discountRate: z.number(),
-  laborRate: z.number().nonnegative(),
+  discountRate: z.number().describe(
+    'Accepted and persisted, but not yet applied by the TCO or simulation engine. See TCO_ENGINE_SPECIFICATION.md "Scenario application".',
+  ),
+  laborRate: z.number().nonnegative().describe(
+    'Accepted and persisted, but not yet applied by the TCO or simulation engine. See TCO_ENGINE_SPECIFICATION.md "Scenario application".',
+  ),
   maintenanceIntervalMultiplier: z.number().positive(),
   failureRateMultiplier: z.number().positive(),
   warrantyExtendedYears: z.number().nonnegative(),
-  fuelCostPerLiter: z.number().nonnegative(),
-  inflationEnabled: z.boolean(),
+  fuelCostPerLiter: z.number().nonnegative().describe(
+    'Accepted and persisted, but not yet applied by the TCO or simulation engine. See TCO_ENGINE_SPECIFICATION.md "Scenario application".',
+  ),
+  inflationEnabled: z.boolean().describe(
+    'Accepted and persisted, but not yet applied by the TCO or simulation engine. See TCO_ENGINE_SPECIFICATION.md "Scenario application".',
+  ),
   includeDowntime: z.boolean(),
   operatingProfileId: z.string().min(1).optional(),
 });

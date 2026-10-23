@@ -423,3 +423,62 @@ machine was real, but was never actually proven portable to a fresh
 environment until this pass. Flagging as a reliability note, not fixing
 the tests themselves: the tests are not wrong, they just have an implicit
 fixture dependency that only a from-scratch CI run exposes.
+
+## 2026-10-23 — Post-merge hardening pass (PR #3) + adjacent-route audit
+
+Verified `main`/`origin/main` still in sync at `cf92948` with PR #2's
+work intact, then worked on `fix/api-contract-hardening-round2`
+(PR #3, open). Confirmed and fixed four concrete gaps, each its own
+commit with a focused regression test:
+
+- `GET /locomotives/:id/cost-records?category=...` accepted any string
+  and cast it `as never`, silently returning zero rows for an invalid
+  category instead of a validation error. Fixed by validating against
+  the same enum `costRecordSchema` already defines.
+- `PATCH /locomotives/:id` applied `fleetId`/`operatingProfileId`
+  changes without re-checking organization ownership, unlike `POST`
+  which already did. A locomotive could be silently reassigned to
+  another org's fleet/profile. Fixed by reusing the existing ownership
+  checks on PATCH.
+- `PATCH /components/:id` had the identical gap for `assemblyId`. Fixed
+  the same way.
+- `SystemNode`/`Assembly` had no update route at all, only create.
+  Added rename-only `PATCH` routes mirroring the `Component` pattern.
+  `DELETE` for both is deliberately **not** implemented: neither model
+  has a `deletedAt` column (unlike `Locomotive`/`Component`), so a real
+  delete needs a migration plus a decision on what happens to child
+  Assemblies/Components — a schema/product decision, not a same-pattern
+  fix.
+
+**Audited for the same pattern elsewhere and found no further gaps**:
+`fleets` PATCH only touches `name`/`archived` (no foreign-key fields to
+re-validate); `scenarios` PATCH already re-validates `operatingProfileId`
+ownership and is covered by an existing cross-org test; `tco`/`simulation`
+run creation already scope `scenarioId` lookups by `organizationId` in
+the service layer (`tco/service.ts:23`, `simulation/service.ts:27`) and
+already have a passing cross-org-404 test for it.
+
+**New finding, documented rather than changed**: `buildAuthenticate`
+(`src/shared/authenticate.ts`) only verifies the access-token JWT's
+signature and expiry — it never re-checks the database. Access tokens
+are short-lived (15 minutes, `ACCESS_TOKEN_TTL` in
+`auth/tokens.ts`), and `login`/`refresh` already reject a deactivated
+user (`auth/service.ts:51,80`), so the exposure is bounded to the
+remaining lifetime of an already-issued token: a user deactivated or
+role-changed mid-session keeps their old access and old role claim for
+up to 15 minutes until that token expires, rather than losing access
+immediately. This is a standard stateless-JWT tradeoff, not a missing
+check — closing it would mean hitting the database on every single
+authenticated request (a real latency cost) purely to shrink an already
+small window. Left unchanged; flagging as a known limitation in case
+near-instant deactivation ever becomes a hard product requirement, at
+which point the fix is a membership/deactivation lookup inside
+`authenticate` (or a shorter TTL) rather than an architecture change.
+
+Verification this pass: `pnpm lint`, `pnpm typecheck`, `npx prisma
+validate`, `pnpm build` all clean; `npx vitest run` — 18 files / 110
+tests passing, exit 0, run against the project's existing local
+Postgres test database per its established `beforeEach`-truncation
+convention (not a disposable per-run database, consistent with how this
+suite has always been run locally on this machine). CI on PR #3
+(`build-and-test`) passing against a fresh `postgres:16` container.

@@ -125,6 +125,18 @@ describe('cost domain', () => {
     expect(all.json().meta.total).toBe(2);
   });
 
+  it('rejects an invalid cost-record category filter with 400', async () => {
+    const app = await buildApp(config);
+    const { token, locomotiveId } = await setup(app);
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/v1/locomotives/${locomotiveId}/cost-records?category=NOT_A_CATEGORY`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(res.json().error.code).toBe('VALIDATION_ERROR');
+  });
+
   it('rejects cross-org maintenance schedule and cost record access with 404', async () => {
     const app = await buildApp(config);
     const { locomotiveId } = await setup(app);

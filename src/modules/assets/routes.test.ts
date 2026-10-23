@@ -149,6 +149,75 @@ async function setupLocomotive(app: Awaited<ReturnType<typeof buildApp>>, token:
   return locoRes.json().data.id as string;
 }
 
+describe('locomotive PATCH association validation', () => {
+  it('allows a PATCH that reassigns fleetId/operatingProfileId within the same org', async () => {
+    const app = await buildApp(config);
+    const token = await registerAndGetToken(app, 'patch-same-org');
+    const locomotiveId = await setupLocomotive(app, token);
+
+    const secondFleet = await app.inject({
+      method: 'POST',
+      url: '/api/v1/fleets',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'Second Fleet' },
+    });
+    const secondFleetId = secondFleet.json().data.id;
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/locomotives/${locomotiveId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { fleetId: secondFleetId },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    expect(patchRes.json().data.fleetId).toBe(secondFleetId);
+  });
+
+  it('rejects a PATCH referencing a nonexistent fleetId with 404', async () => {
+    const app = await buildApp(config);
+    const token = await registerAndGetToken(app, 'patch-missing-fleet');
+    const locomotiveId = await setupLocomotive(app, token);
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/locomotives/${locomotiveId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { fleetId: '00000000-0000-0000-0000-000000000000' },
+    });
+    expect(patchRes.statusCode).toBe(404);
+  });
+
+  it('rejects a PATCH referencing another org\'s fleetId or operatingProfileId with 404', async () => {
+    const app = await buildApp(config);
+    const tokenA = await registerAndGetToken(app, 'patch-cross-org-owner');
+    const tokenB = await registerAndGetToken(app, 'patch-cross-org-intruder');
+    const locomotiveId = await setupLocomotive(app, tokenA);
+
+    const otherFleet = await app.inject({
+      method: 'POST',
+      url: '/api/v1/fleets',
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { name: 'Other Org Fleet' },
+    });
+    const otherFleetId = otherFleet.json().data.id;
+
+    const crossOrgFleetPatch = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/locomotives/${locomotiveId}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { fleetId: otherFleetId },
+    });
+    expect(crossOrgFleetPatch.statusCode).toBe(404);
+
+    const unaffected = await app.inject({
+      method: 'GET',
+      url: `/api/v1/locomotives/${locomotiveId}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(unaffected.json().data.fleetId).not.toBe(otherFleetId);
+  });
+});
+
 describe('system/assembly hierarchy', () => {
   it('creates a system and an assembly under it via HTTP, buildable end to end', async () => {
     const app = await buildApp(config);
@@ -204,6 +273,83 @@ describe('system/assembly hierarchy', () => {
       headers: { authorization: `Bearer ${token}` },
     });
     expect(tree.json().data.systems[0].assemblies[0].components).toHaveLength(1);
+  });
+
+  it('updates a system node and an assembly via PATCH', async () => {
+    const app = await buildApp(config);
+    const token = await registerAndGetToken(app, 'tree-patch');
+    const locomotiveId = await setupLocomotive(app, token);
+
+    const systemRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'Propulsion', icon: 'engine', criticality: 'High' },
+    });
+    const systemId = systemRes.json().data.id;
+    const assemblyRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}/assemblies`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'Traction' },
+    });
+    const assemblyId = assemblyRes.json().data.id;
+
+    const systemPatch = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { criticality: 'Medium' },
+    });
+    expect(systemPatch.statusCode).toBe(200);
+    expect(systemPatch.json().data.criticality).toBe('Medium');
+
+    const assemblyPatch = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}/assemblies/${assemblyId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'Traction Renamed' },
+    });
+    expect(assemblyPatch.statusCode).toBe(200);
+    expect(assemblyPatch.json().data.name).toBe('Traction Renamed');
+  });
+
+  it('rejects updating another organization’s system node or assembly with 404', async () => {
+    const app = await buildApp(config);
+    const tokenA = await registerAndGetToken(app, 'tree-patch-owner');
+    const tokenB = await registerAndGetToken(app, 'tree-patch-intruder');
+    const locomotiveId = await setupLocomotive(app, tokenA);
+
+    const systemRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { name: 'Propulsion', icon: 'engine', criticality: 'High' },
+    });
+    const systemId = systemRes.json().data.id;
+    const assemblyRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}/assemblies`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { name: 'Traction' },
+    });
+    const assemblyId = assemblyRes.json().data.id;
+
+    const crossOrgSystemPatch = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}`,
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { criticality: 'Low' },
+    });
+    expect(crossOrgSystemPatch.statusCode).toBe(404);
+
+    const crossOrgAssemblyPatch = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}/assemblies/${assemblyId}`,
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { name: 'Hijacked' },
+    });
+    expect(crossOrgAssemblyPatch.statusCode).toBe(404);
   });
 
   it('rejects creating a system or assembly on another organization’s locomotive', async () => {
@@ -456,5 +602,72 @@ describe('component RBAC', () => {
       headers: { authorization: `Bearer ${tokenB}` },
     });
     expect(crossOrgDelete.statusCode).toBe(404);
+  });
+
+  it('rejects reassigning a component to another organization’s assembly with 404', async () => {
+    const app = await buildApp(config);
+    const tokenA = await registerAndGetToken(app, 'component-reassign-owner');
+    const tokenB = await registerAndGetToken(app, 'component-reassign-other');
+    const locomotiveId = await setupLocomotive(app, tokenA);
+
+    const systemRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { name: 'Propulsion', icon: 'engine', criticality: 'High' },
+    });
+    const systemId = systemRes.json().data.id;
+    const assemblyRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}/assemblies`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { name: 'Traction' },
+    });
+    const assemblyId = assemblyRes.json().data.id;
+    const componentRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/components`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        assemblyId,
+        name: 'Traction Motor',
+        purchaseCost: 10000,
+        replacementCost: 10000,
+        lifeYears: 5,
+        mtbfHours: 40000,
+        weibullBeta: 2,
+        weibullEta: 50000,
+        mttrHours: 12,
+        warrantyYears: 7,
+        laborCostPct: 18,
+        failureImpact: 'High',
+        category: 'Propulsion',
+        downtimeCostPerDay: 5000,
+      },
+    });
+    const componentId = componentRes.json().data.id;
+
+    const otherLocomotiveId = await setupLocomotive(app, tokenB);
+    const otherSystemRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${otherLocomotiveId}/systems`,
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { name: 'Propulsion', icon: 'engine', criticality: 'High' },
+    });
+    const otherAssemblyRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${otherLocomotiveId}/systems/${otherSystemRes.json().data.id}/assemblies`,
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { name: 'Other Assembly' },
+    });
+    const otherAssemblyId = otherAssemblyRes.json().data.id;
+
+    const reassign = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/components/${componentId}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { assemblyId: otherAssemblyId },
+    });
+    expect(reassign.statusCode).toBe(404);
   });
 });

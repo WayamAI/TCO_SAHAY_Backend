@@ -160,6 +160,15 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
         where: { id, organizationId: orgId(request), deletedAt: null },
       });
       if (!existing) throw new NotFoundError('Locomotive');
+      if (body.fleetId !== undefined) {
+        const fleet = await prisma.fleet.findFirst({
+          where: { id: body.fleetId, organizationId: orgId(request) },
+        });
+        if (!fleet) throw new NotFoundError('Fleet');
+      }
+      if (body.operatingProfileId !== undefined) {
+        await assertOwnedOperatingProfile(body.operatingProfileId, orgId(request));
+      }
       const locomotive = await prisma.locomotive.update({ where: { id }, data: body });
       return { data: locomotive };
     },
@@ -244,6 +253,56 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  app.patch(
+    '/locomotives/:id/systems/:systemId',
+    {
+      preHandler: [authenticate, requireRole('ADMIN', 'MANAGER')],
+      schema: {
+        tags: ['assets'],
+        summary: 'Update a system node',
+        security: bearerAuth,
+        params: z2j(z.object({ id: z.string(), systemId: z.string() })),
+        body: z2j(systemNodeSchema.partial()),
+        response: { 200: dataResponse(z2j(entitySchema)), 404: errorResponse },
+      },
+    },
+    async (request) => {
+      const { id, systemId } = request.params as { id: string; systemId: string };
+      const body = systemNodeSchema.partial().parse(request.body);
+      const existing = await prisma.systemNode.findFirst({
+        where: { id: systemId, organizationId: orgId(request), locomotiveId: id },
+      });
+      if (!existing) throw new NotFoundError('SystemNode');
+      const system = await prisma.systemNode.update({ where: { id: systemId }, data: body });
+      return { data: system };
+    },
+  );
+
+  app.patch(
+    '/locomotives/:id/systems/:systemId/assemblies/:assemblyId',
+    {
+      preHandler: [authenticate, requireRole('ADMIN', 'MANAGER')],
+      schema: {
+        tags: ['assets'],
+        summary: 'Update an assembly',
+        security: bearerAuth,
+        params: z2j(z.object({ id: z.string(), systemId: z.string(), assemblyId: z.string() })),
+        body: z2j(assemblySchema.partial()),
+        response: { 200: dataResponse(z2j(entitySchema)), 404: errorResponse },
+      },
+    },
+    async (request) => {
+      const { systemId, assemblyId } = request.params as { id: string; systemId: string; assemblyId: string };
+      const body = assemblySchema.partial().parse(request.body);
+      const existing = await prisma.assembly.findFirst({
+        where: { id: assemblyId, organizationId: orgId(request), systemNodeId: systemId },
+      });
+      if (!existing) throw new NotFoundError('Assembly');
+      const assembly = await prisma.assembly.update({ where: { id: assemblyId }, data: body });
+      return { data: assembly };
+    },
+  );
+
   app.get(
     '/locomotives/:id/components',
     {
@@ -322,6 +381,12 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
         where: { id, organizationId: orgId(request), deletedAt: null },
       });
       if (!existing) throw new NotFoundError('Component');
+      if (body.assemblyId !== undefined) {
+        const assembly = await prisma.assembly.findFirst({
+          where: { id: body.assemblyId, organizationId: orgId(request) },
+        });
+        if (!assembly) throw new NotFoundError('Assembly');
+      }
       const component = await prisma.component.update({ where: { id }, data: body });
       return { data: component };
     },

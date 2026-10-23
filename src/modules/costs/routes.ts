@@ -27,6 +27,11 @@ const costRecordSchema = z.object({
   amount: z.number(),
 });
 
+const costRecordQuerySchema = z.object({
+  year: z.coerce.number().int().optional(),
+  category: costRecordSchema.shape.category.optional(),
+});
+
 const locomotiveIdParamsSchema = z.object({ id: z.string() });
 const scheduleIdParamsSchema = z.object({ scheduleId: z.string() });
 
@@ -154,12 +159,12 @@ export async function costRoutes(app: FastifyInstance): Promise<void> {
       const { id } = request.params as { id: string };
       await assertLocomotiveOwned(id, orgId(request));
       const pagination = paginationSchema.parse(request.query);
-      const { year, category } = request.query as { year?: string; category?: string };
+      const { year, category } = costRecordQuerySchema.parse(request.query);
       const where = {
         locomotiveId: id,
         organizationId: orgId(request),
-        ...(year ? { year: Number(year) } : {}),
-        ...(category ? { category: category as never } : {}),
+        ...(year !== undefined ? { year } : {}),
+        ...(category ? { category } : {}),
       };
       const [items, total] = await Promise.all([
         prisma.costRecord.findMany({ where, ...paginationArgs(pagination), orderBy: { year: 'desc' } }),

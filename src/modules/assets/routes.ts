@@ -160,6 +160,15 @@ export async function assetRoutes(app: FastifyInstance): Promise<void> {
         where: { id, organizationId: orgId(request), deletedAt: null },
       });
       if (!existing) throw new NotFoundError('Locomotive');
+      if (body.fleetId !== undefined) {
+        const fleet = await prisma.fleet.findFirst({
+          where: { id: body.fleetId, organizationId: orgId(request) },
+        });
+        if (!fleet) throw new NotFoundError('Fleet');
+      }
+      if (body.operatingProfileId !== undefined) {
+        await assertOwnedOperatingProfile(body.operatingProfileId, orgId(request));
+      }
       const locomotive = await prisma.locomotive.update({ where: { id }, data: body });
       return { data: locomotive };
     },

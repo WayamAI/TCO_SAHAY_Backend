@@ -149,6 +149,75 @@ async function setupLocomotive(app: Awaited<ReturnType<typeof buildApp>>, token:
   return locoRes.json().data.id as string;
 }
 
+describe('locomotive PATCH association validation', () => {
+  it('allows a PATCH that reassigns fleetId/operatingProfileId within the same org', async () => {
+    const app = await buildApp(config);
+    const token = await registerAndGetToken(app, 'patch-same-org');
+    const locomotiveId = await setupLocomotive(app, token);
+
+    const secondFleet = await app.inject({
+      method: 'POST',
+      url: '/api/v1/fleets',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { name: 'Second Fleet' },
+    });
+    const secondFleetId = secondFleet.json().data.id;
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/locomotives/${locomotiveId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { fleetId: secondFleetId },
+    });
+    expect(patchRes.statusCode).toBe(200);
+    expect(patchRes.json().data.fleetId).toBe(secondFleetId);
+  });
+
+  it('rejects a PATCH referencing a nonexistent fleetId with 404', async () => {
+    const app = await buildApp(config);
+    const token = await registerAndGetToken(app, 'patch-missing-fleet');
+    const locomotiveId = await setupLocomotive(app, token);
+
+    const patchRes = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/locomotives/${locomotiveId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { fleetId: '00000000-0000-0000-0000-000000000000' },
+    });
+    expect(patchRes.statusCode).toBe(404);
+  });
+
+  it('rejects a PATCH referencing another org\'s fleetId or operatingProfileId with 404', async () => {
+    const app = await buildApp(config);
+    const tokenA = await registerAndGetToken(app, 'patch-cross-org-owner');
+    const tokenB = await registerAndGetToken(app, 'patch-cross-org-intruder');
+    const locomotiveId = await setupLocomotive(app, tokenA);
+
+    const otherFleet = await app.inject({
+      method: 'POST',
+      url: '/api/v1/fleets',
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { name: 'Other Org Fleet' },
+    });
+    const otherFleetId = otherFleet.json().data.id;
+
+    const crossOrgFleetPatch = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/locomotives/${locomotiveId}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { fleetId: otherFleetId },
+    });
+    expect(crossOrgFleetPatch.statusCode).toBe(404);
+
+    const unaffected = await app.inject({
+      method: 'GET',
+      url: `/api/v1/locomotives/${locomotiveId}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    expect(unaffected.json().data.fleetId).not.toBe(otherFleetId);
+  });
+});
+
 describe('system/assembly hierarchy', () => {
   it('creates a system and an assembly under it via HTTP, buildable end to end', async () => {
     const app = await buildApp(config);

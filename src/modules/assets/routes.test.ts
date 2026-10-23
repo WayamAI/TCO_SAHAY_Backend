@@ -526,4 +526,71 @@ describe('component RBAC', () => {
     });
     expect(crossOrgDelete.statusCode).toBe(404);
   });
+
+  it('rejects reassigning a component to another organization’s assembly with 404', async () => {
+    const app = await buildApp(config);
+    const tokenA = await registerAndGetToken(app, 'component-reassign-owner');
+    const tokenB = await registerAndGetToken(app, 'component-reassign-other');
+    const locomotiveId = await setupLocomotive(app, tokenA);
+
+    const systemRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { name: 'Propulsion', icon: 'engine', criticality: 'High' },
+    });
+    const systemId = systemRes.json().data.id;
+    const assemblyRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/systems/${systemId}/assemblies`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { name: 'Traction' },
+    });
+    const assemblyId = assemblyRes.json().data.id;
+    const componentRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${locomotiveId}/components`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: {
+        assemblyId,
+        name: 'Traction Motor',
+        purchaseCost: 10000,
+        replacementCost: 10000,
+        lifeYears: 5,
+        mtbfHours: 40000,
+        weibullBeta: 2,
+        weibullEta: 50000,
+        mttrHours: 12,
+        warrantyYears: 7,
+        laborCostPct: 18,
+        failureImpact: 'High',
+        category: 'Propulsion',
+        downtimeCostPerDay: 5000,
+      },
+    });
+    const componentId = componentRes.json().data.id;
+
+    const otherLocomotiveId = await setupLocomotive(app, tokenB);
+    const otherSystemRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${otherLocomotiveId}/systems`,
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { name: 'Propulsion', icon: 'engine', criticality: 'High' },
+    });
+    const otherAssemblyRes = await app.inject({
+      method: 'POST',
+      url: `/api/v1/locomotives/${otherLocomotiveId}/systems/${otherSystemRes.json().data.id}/assemblies`,
+      headers: { authorization: `Bearer ${tokenB}` },
+      payload: { name: 'Other Assembly' },
+    });
+    const otherAssemblyId = otherAssemblyRes.json().data.id;
+
+    const reassign = await app.inject({
+      method: 'PATCH',
+      url: `/api/v1/components/${componentId}`,
+      headers: { authorization: `Bearer ${tokenA}` },
+      payload: { assemblyId: otherAssemblyId },
+    });
+    expect(reassign.statusCode).toBe(404);
+  });
 });
